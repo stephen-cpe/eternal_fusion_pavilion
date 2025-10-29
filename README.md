@@ -534,13 +534,7 @@ sudo systemctl restart efp-backend
 
 If the application is not working as expected, check the following common issues first.
 
-1.  **Nginx Fails to Start (Hash Bucket Size Error)**
-    If `sudo nginx -t` fails with a `server_names_hash_bucket_size` error, it means your EC2 DNS name is too long for Nginx's default settings.
-
-      * **Solution**: Edit the main Nginx config file: `sudo nano /etc/nginx/nginx.conf`.
-      * Inside the `http { ... }` block, find the line `# server_names_hash_bucket_size 64;` and uncomment it (remove the `#`). If it doesn't exist, add it. Save the file and run `sudo nginx -t` again.
-
-2.  **Permission Denied Errors (Nginx 5xx Errors)**
+1.  **Permission Denied Errors (Nginx 5xx Errors)**
     If you see Nginx errors related to "permission denied," it means the `www-data` user cannot read the application files.
 
       * **Solution**: The user home directory (`/home/ubuntu`) permissions must allow execution access for others. Run the following command:
@@ -548,13 +542,22 @@ If the application is not working as expected, check the following common issues
         chmod 755 /home/ubuntu
         ```
 
+2.  **Nginx Fails to Start (Hash Bucket Size Error)**
+    If `sudo nginx -t` fails with a `server_names_hash_bucket_size` error, it means your EC2 DNS name is too long for Nginx's default settings.
+
+      * **Solution**: Edit the main Nginx config file: `sudo nano /etc/nginx/nginx.conf`.
+      * Inside the `http { ... }` block, find the line `# server_names_hash_bucket_size 64;` and uncomment it (remove the `#`). If it doesn't exist, add it. Save the file and run `sudo nginx -t` again.
+
+
+
 > The steps in this guide are sequential and comprehensive. If you encounter issues not listed above, carefully review the previous steps for any missed commands, typos in configuration files, or incorrect values (e.g., hostnames, passwords). Checking service logs with `sudo journalctl -u efp-backend` and `sudo tail -f /var/log/nginx/error.log` will also provide valuable clues.
 
 ---
 
 ## Project Demo
 
-Watch the demo:
+Watch the demo: [https://www.youtube.com/watch?v=bWURhdDABVk](https://www.youtube.com/watch?v=bWURhdDABVk)
+
 
 ---
 
