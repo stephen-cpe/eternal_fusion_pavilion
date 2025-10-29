@@ -1,0 +1,6 @@
+import bcrypt
+
+password = "strongpassword".encode('utf-8')
+salt = bcrypt.gensalt()
+hashed = bcrypt.hashpw(password, salt)
+print(f"Bcrypt hash for 'strongpassword': {hashed.decode('utf-8')}")
