@@ -1,12 +1,14 @@
 /* frontend/src/index.css */
 
 /* -------------------------------------------
-   TailwindCSS + Brand Palette Integration
+   TailwindCSS v4 + Brand Palette Integration
 ------------------------------------------- */
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Import Tailwind v4 using new @import syntax */
+@import "tailwindcss";
+
+/* Define custom dark mode variant for Tailwind v4 */
+@custom-variant dark (&:is(.dark *));
 
 /* ===========================================
    Brand Palette:
@@ -16,75 +18,98 @@
    #996515 (Golden Brown)
    #124189 (Icon Blue)
 =========================================== */
-@layer base {
-  :root {
-    /* Background colors - using lighter version of #384C6B */
-    --background: #F0EAE0; /* Fallback for off-white beige */
-    --background: oklch(98% 0.01 100);
-    
-    --card: #9ba5b5; /* Lighter version of #384C6B */
-    --card: oklch(73% 0.06 254.3);
-    
-    --popover: #F0EAE0; /* Fallback for off-white beige */
-    --popover: oklch(98% 0.01 100);
-    
-    /* Primary colors - using lighter version of #384C6B */
-    --primary: #9ba5b5; /* Lighter version of #384C6B */
-    --primary: oklch(73% 0.06 254.3);
-    
-    --primary-foreground: #F0EAE0; /* Fallback for Light beige */
-    --primary-foreground: oklch(98% 0.01 100);
-    
-    /* Foreground colors - using darker shade of #384C6B */
-    --foreground: #2c3c55; /* Darker shade of #384C6B */
-    --foreground: oklch(29.1% 0.06 254.3);
-    
-    --card-foreground: #2c3c55; /* Darker shade of #384C6B */
-    --card-foreground: oklch(29.1% 0.06 254.3);
-    
-    --popover-foreground: #2c3c55; /* Darker shade of #384C6B */
-    --popover-foreground: oklch(29.1% 0.06 254.3);
-    
-    /* Secondary colors */
-    --secondary: #6E6E6E; /* Fallback for Neutral Gray */
-    --secondary: oklch(49.23% 0 0);
-    
-    --secondary-foreground: #F0EAE0; /* Fallback for Light beige */
-    --secondary-foreground: oklch(98% 0.01 100);
-    
-    /* Muted colors */
-    --muted: #EAE0D5; /* Fallback for Pale beige */
-    --muted: oklch(90% 0.01 100);
-    
-    --muted-foreground: #384C6B; /* Original deep blue */
-    --muted-foreground: oklch(39.1% 0.06 254.3);
-    
-    /* Accent colors */
-    --accent: #e6e6e6; /* Fallback for Pale Gray */
-    --accent: oklch(89.01% 0.008 240.00);
-    
-    --accent-foreground: #2c3c55; /* Darker shade of #384C6B */
-    --accent-foreground: oklch(29.1% 0.06 254.3);
-    
-    /* Destructive colors */
-    --destructive: #E57373; /* Fallback for Soft red */
-    --destructive: oklch(55% 0.25 27);
-    
-    --destructive-foreground: #F0EAE0; /* Fallback for Light beige */
-    --destructive-foreground: oklch(98% 0.01 100);
-    
-    /* Border and input colors - using darker shade of #384C6B */
-    --border: #2c3c55; /* Darker shade of #384C6B */
-    --border: oklch(29.1% 0.06 254.3);
-    
-    --input: #2c3c55; /* Darker shade of #384C6B */
-    --input: oklch(29.1% 0.06 254.3);
-    
-    --ring: #9ba5b580; /* Lighter version of #384C6B with opacity */
-    --ring: oklch(73% 0.06 254.3 / 0.5);
-    
-    --radius: 0.75rem; /* Softer rounded corners */
-  }
+
+/* Define CSS custom properties in :root for light mode */
+:root {
+  /* Background colors - using lighter version of #384C6B */
+  --background: oklch(98% 0.01 100);
+
+  --card: #ebedf0;
+
+  --popover: oklch(98% 0.01 100);
+
+  /* Primary colors - using lighter version of #384C6B */
+  --primary: oklch(73% 0.06 254.3);
+
+  --primary-foreground: oklch(98% 0.01 100);
+
+  /* Foreground colors - using darker shade of #384C6B */
+  --foreground: oklch(29.1% 0.06 254.3);
+
+  --card-foreground: oklch(29.1% 0.06 254.3);
+
+  --popover-foreground: oklch(29.1% 0.06 254.3);
+
+  /* Secondary colors */
+  --secondary: oklch(49.23% 0 0);
+
+  --secondary-foreground: oklch(98% 0.01 100);
+
+  /* Muted colors */
+  --muted: oklch(90% 0.01 100);
+
+  --muted-foreground: oklch(39.1% 0.06 254.3);
+
+  /* Accent colors */
+  --accent: oklch(89.01% 0.008 240.0);
+
+  --accent-foreground: oklch(29.1% 0.06 254.3);
+
+  /* Destructive colors */
+  --destructive: oklch(55% 0.25 27);
+
+  --destructive-foreground: oklch(98% 0.01 100);
+
+  /* Border and input colors - using darker shade of #384C6B */
+  --border: oklch(29.1% 0.06 254.3);
+
+  --input: oklch(29.1% 0.06 254.3);
+
+  --ring: oklch(73% 0.06 254.3 / 0.5);
+
+  --radius: 0.75rem;
+}
+
+/* Define Tailwind v4 theme using @theme inline directive */
+@theme inline {
+  /* Font families */
+  --font-sans: "Geist Sans", system-ui, sans-serif;
+  --font-mono: "Geist Mono", monospace;
+
+  /* Colors mapped from CSS custom properties */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Custom brand colors */
+  --color-deep-blue: #384c6b;
+  --color-darker-blue: #2c3c55;
+  --color-lighter-blue: #9ba5b5;
+  --color-golden-brown: #996515;
+  --color-footer-bg: #384c6b;
+  --color-icon-blue: #124189;
+
+  /* Border radius */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
 /* ===========================================
@@ -93,29 +118,53 @@
 @layer base {
   * {
     /* keeps outlines/ring colors consistent without imposing border widths */
-    @apply border-border;
+    @apply border-border outline-ring/50;
   }
 
   body {
     @apply bg-background text-foreground;
-    font-family: 'Geist Sans', system-ui, sans-serif;
+    font-family: "Geist Sans", system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  h1, h2, h3, h4, h5, h6 {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     @apply font-bold tracking-tight;
     color: var(--foreground);
   }
 
-  h1 { font-size: 2.25rem; line-height: 1.05; }    /* text-4xl */
-  @media (min-width: 768px) { h1 { font-size: 3rem; } } /* md:text-5xl */
+  h1 {
+    font-size: 2.25rem;
+    line-height: 1.05;
+  } /* text-4xl */
+  @media (min-width: 768px) {
+    h1 {
+      font-size: 3rem;
+    }
+  } /* md:text-5xl */
 
-  h2 { font-size: 1.875rem; }                      /* text-3xl */
-  @media (min-width: 768px) { h2 { font-size: 2.25rem; } } /* md:text-4xl */
+  h2 {
+    font-size: 1.875rem;
+  } /* text-3xl */
+  @media (min-width: 768px) {
+    h2 {
+      font-size: 2.25rem;
+    }
+  } /* md:text-4xl */
 
-  h3 { font-size: 1.5rem; }                        /* text-2xl */
-  @media (min-width: 768px) { h3 { font-size: 1.875rem; } } /* md:text-3xl */
+  h3 {
+    font-size: 1.5rem;
+  } /* text-2xl */
+  @media (min-width: 768px) {
+    h3 {
+      font-size: 1.875rem;
+    }
+  } /* md:text-3xl */
 
   p {
     color: var(--muted-foreground);
@@ -126,7 +175,39 @@
     color: var(--primary);
     transition: color 180ms ease;
   }
-  a:hover { color: var(--accent); }
+  a:hover {
+    color: var(--accent);
+  }
+
+  code {
+    font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+      monospace;
+  }
+
+  /* Add subtle hover effects for interactive elements */
+  button, a, input {
+    transition: all 0.2s ease;
+  }
+
+  /* Custom scrollbar for modern browsers */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--muted);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--primary);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--primary);
+  }
+  
 }
 
 /* ===========================================
@@ -142,9 +223,9 @@
     box-shadow: 0 6px 18px oklch(39.1% 0.06 254.3 / 0.06);
     transition: box-shadow .25s ease, transform .18s ease, border-color .18s ease;
   }
-  .card:hover { 
-    box-shadow: 0 10px 26px oklch(39.1% 0.06 254.3 / 0.09); 
-    transform: translateY(-4px); 
+  .card:hover {
+    box-shadow: 0 10px 26px oklch(39.1% 0.06 254.3 / 0.09);
+    transform: translateY(-4px);
     border-color: oklch(var(--primary) / 0.25);
   }
 
@@ -163,39 +244,50 @@
     box-shadow: 0 8px 20px oklch(var(--primary) / 0.12);
     transition: background-color .15s ease, transform .12s ease, box-shadow .15s ease;
   }
-  .btn:hover { 
-    background-color: color-mix(in oklch, var(--primary) 90%, black 10%); 
-    transform: translateY(-3px); 
+  .btn:hover {
+    background-color: color-mix(in oklch, var(--primary) 90%, black 10%);
+    transform: translateY(-3px);
     box-shadow: 0 10px 24px oklch(var(--primary) / 0.16);
   }
-  .btn:disabled { 
-    opacity: .6; 
-    cursor: not-allowed; 
-    transform: none; 
+  .btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
     box-shadow: none;
   }
 
   .btn-outline {
-    display: inline-flex; align-items: center; justify-content:center;
-    height: 2.5rem; padding: 0 .75rem; border-radius: .5rem;
-    border: 2px solid var(--primary); color: var(--primary);
-    background: transparent; font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 2.5rem;
+    padding: 0 .75rem;
+    border-radius: .5rem;
+    border: 2px solid var(--primary);
+    color: var(--primary);
+    background: transparent;
+    font-weight: 600;
     transition: background-color .15s ease, transform .12s ease;
   }
-  .btn-outline:hover { 
-    background-color: oklch(var(--primary) / 0.08); 
-    transform: translateY(-3px); 
+  .btn-outline:hover {
+    background-color: oklch(var(--primary) / 0.08);
+    transform: translateY(-3px);
   }
 
   .btn-accent {
     display: inline-flex;
-    align-items: center; justify-content:center;
-    height: 2.5rem; padding: 0 .75rem; border-radius: .5rem;
-    background-color: var(--accent); color: var(--accent-foreground); font-weight: 600;
+    align-items: center;
+    justify-content: center;
+    height: 2.5rem;
+    padding: 0 .75rem;
+    border-radius: .5rem;
+    background-color: var(--accent);
+    color: var(--accent-foreground);
+    font-weight: 600;
     box-shadow: 0 8px 18px oklch(var(--accent) / 0.08);
   }
-  .btn-accent:hover { 
-    background-color: color-mix(in oklch, var(--accent) 88%, black 12%); 
+  .btn-accent:hover {
+    background-color: color-mix(in oklch, var(--accent) 88%, black 12%);
     transform: translateY(-3px);
   }
 
@@ -217,8 +309,16 @@
   }
 
   /* Layout Helpers */
-  .section-padding { padding: 4rem 1rem; }
-  .site-container { max-width: 80rem; margin-left: auto; margin-right: auto; padding-left: 1rem; padding-right: 1rem; }
+  .section-padding {
+    padding: 4rem 1rem;
+  }
+  .site-container {
+    max-width: 80rem;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
 
   /* Gradients */
   .text-gradient {
@@ -227,16 +327,16 @@
     background-clip: text;
     color: transparent;
   }
-  
-  .overlay-dark { 
-    background-color: oklch(39.1% 0.06 254.3 / 0.5); 
+
+  .overlay-dark {
+    background-color: oklch(39.1% 0.06 254.3 / 0.5);
   }
 
   /* Hover Animations */
-  .hover-lift { 
-    transition: transform .22s ease; 
+  .hover-lift {
+    transition: transform .22s ease;
   }
-  .hover-lift:hover { 
-    transform: translateY(-6px); 
+  .hover-lift:hover {
+    transform: translateY(-6px);
   }
 }
