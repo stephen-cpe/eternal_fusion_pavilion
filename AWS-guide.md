@@ -1,5 +1,12 @@
 # **Deployment Guide using Amazon Linux 2023**
 
+## Disclaimer
+
+* This project is intended for **educational, testing, and experimentation purposes only**.
+* **Not suitable for production use**.
+* This guide and project will not be updated regularly.
+* Use at your own risk. No warranties, guarantees, or support are provided.
+
 ---
 
 ## **Step 1: Launch EC2 Instance (Amazon Linux)**
@@ -131,7 +138,7 @@ sudo chown -R ec2-user:ec2-user /var/www/efp
 
 Create `.env` file
 ```bash
-nano .env
+sudo nano /var/www/efp/backend/.env
 ```
 
 Add the following content:
