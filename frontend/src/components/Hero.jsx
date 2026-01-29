@@ -54,7 +54,7 @@ function Hero() {
 
           <motion.p
             variants={itemVariants}
-            className="text-xl md:text-2xl mb-8 text-pretty max-w-2xl mx-auto text-white"
+            className="text-xl md:text-2xl mb-8 text-pretty max-w-2xl mx-auto text-white rye-regular"
           >
             A sanctuary where Japanese precision, Italian warmth, and Spanish innovation converge for an unforgettable dining experience.
           </motion.p>
