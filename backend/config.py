@@ -27,5 +27,4 @@ class Config:
     # ------------------------------------
 
 # Make sure SESSION_FILE_DIR exists
-if not os.path.exists(Config.SESSION_FILE_DIR):
-    os.makedirs(Config.SESSION_FILE_DIR)
+os.makedirs(Config.SESSION_FILE_DIR, exist_ok=True)

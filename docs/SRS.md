@@ -42,8 +42,8 @@ The system provides two primary interfaces:
 
 The EFP is a self-contained, client-server system. It is composed of three main components:
 
-1.  **Frontend:** A React SPA (built with Vite) that runs in the user's web browser. It communicates with the backend via HTTP requests. The dev server runs on port 3000 and proxies `/api` requests to the Flask backend on port 5000 (`vite.config.js`). The production build outputs static files to `frontend/dist`, which are served by Nginx (or Flask's catch-all route in development).
-2.  **Backend:** A Python Flask server that exposes a JSON-based REST API. It handles all business logic, data validation, and authentication. Routes are organized as Flask Blueprints registered under the configurable `API_PREFIX` (default `/api`).
+1.  **Frontend:** A React SPA (built with Vite) that runs in the user's web browser. It communicates with the backend via HTTP requests. The dev server runs on port 3000 and proxies `/api` requests to the Flask backend on port 5000 (`vite.config.mjs`). The production build outputs static files to `frontend/dist`, which are served by Nginx (or Flask's catch-all route in development).
+2.  **Backend:** A Python Flask server that exposes a JSON-based REST API. It handles all business logic, data validation, and authentication. Routes are organized as Flask Blueprints registered under the configurable `API_PREFIX` (default `/api`). Shared helpers live in `utils/` (`time_utils.py`, `room_assignment.py`, `audit.py`, `dashboard.py`).
 3.  **Database:** A PostgreSQL database, interacted with via the Flask backend using SQLAlchemy (ORM, primary data access layer in `models.py` and route handlers) and `psycopg2` (direct connection pool in `database.py`, used by the utility functions in `utils/room_assignment.py` for constraint queries).
 
 ### 2.2 Product Functions
@@ -82,8 +82,8 @@ The public SPA (`src/App.jsx`) exposes the following routes: `/` (Home), `/menu`
 
 ### 2.4 Operating Environment
 
-* **Frontend:** The system shall be operable in all modern, JavaScript-enabled web browsers (e.g., Chrome, Firefox, Safari, Edge). Built with React 19 and Vite 7, styled with Tailwind CSS 4, with `@tanstack/react-query` for server state, `react-toastify` for notifications, and `framer-motion` for animations. Vite proxies `/api/*` to the backend during development.
-* **Backend:** The system shall run in a Python 3 environment (Flask 3.1 with Flask-Session 0.8, Flask-SQLAlchemy 3.1, Flask-Cors 6.0, bcrypt, and psycopg2-binary). Gunicorn is used as the WSGI server in production.
+* **Frontend:** The system shall be operable in all modern, JavaScript-enabled web browsers (e.g., Chrome, Firefox, Safari, Edge). Built with React 19 and Vite 8, styled with Tailwind CSS 4, with `@tanstack/react-query` for server state, `axios` for HTTP, `react-toastify` for notifications, and `framer-motion` for animations. Vite proxies `/api/*` to the backend during development. Testing is via Vitest + `@testing-library/react`.
+* **Backend:** The system shall run in a Python 3 environment (Flask 3.1 with Flask-Session 0.8, Flask-SQLAlchemy 3.1, Flask-Cors 6.0, bcrypt, and psycopg2-binary). Gunicorn is used as the WSGI server in production. Testing is via pytest + pytest-flask.
 * **Database:** The system requires a running PostgreSQL database instance.
 
 ### 2.5 Design and Implementation Constraints
@@ -97,6 +97,7 @@ The public SPA (`src/App.jsx`) exposes the following routes: `/` (Home), `/menu`
 * The system shall use a weighted-random algorithm for automatic room assignment.
 * The database structure is fixed as defined in the `init_db.sql` schema.
 * Configuration is loaded from environment variables via `python-dotenv` (`backend/config.py`); a standalone `backend/create_admin.py` script is provided to (re)seed the default admin account.
+* The system includes an automated test suite: backend tests run via `pytest` (unit tests for `utils/` + integration tests for all route blueprints, using SQLite in-memory); frontend tests run via `Vitest` + `@testing-library/react` (service-layer and component tests). Tests are executed with `cd backend && pytest tests/` and `cd frontend && npm test` respectively.
 
 ---
 
@@ -148,11 +149,6 @@ The system must persist data according to the following schema.
     * If the email does not exist, it shall be created with 'active' status (HTTP 201).
     * If the email exists and is 'active', it shall return a "already subscribed" message (HTTP 200).
     * If the email exists and is 'unsubscribed', its status shall be updated to 'active' and `subscribed_at` refreshed.
-
-* **FR1.4: Newsletter Subscription**
-    * The system shall provide a public API endpoint (`POST /api/newsletter/`) to subscribe a user.
-    * If the email does not exist, it shall be created with 'active' status.
-    * If the email exists and is 'unsubscribed', its status shall be updated to 'active'.
 
 #### FR2: Admin Authentication Module
 
@@ -223,10 +219,10 @@ The system must enforce the following rules, primarily via `utils/room_assignmen
     * `current_reservations_in_slot` is the count of all confirmed `reservations` that overlap with the new reservation's time window.
 
 * **FR4.4: Location 'Hard' Block**
-    * The system must reject any new reservation if its time window overlaps with a `reservation_blocks` entry where `location_id` matches, `room_id` IS NULL, and `block_type` is 'hard'. Overlap is checked by: the reservation `date` is between `start_date` and `end_date`, and `start_time < block.end_time` and `end_time > block.start_time`.
+    * The system must reject any new reservation if its time window overlaps with a `reservation_blocks` entry where `location_id` matches, `room_id` IS NULL, and `block_type` is 'hard'. Overlap is checked by: the reservation `date` is between `start_date` and `end_date`, and either (a) `start_time = end_time` (an all-day block that blocks any time on that date), or (b) `start_time < block.end_time` and `end_time > block.start_time`.
 
 * **FR4.5: Room 'Hard' Block**
-    * The system must reject any new reservation if its assigned room's time window overlaps with a `reservation_blocks` entry where `room_id` matches and `block_type` is 'hard' (same overlap rule as FR4.4).
+    * The system must reject any new reservation if its assigned room's time window overlaps with a `reservation_blocks` entry where `room_id` matches and `block_type` is 'hard' (same overlap rule as FR4.4, including the all-day `start_time = end_time` case).
 
 * **FR4.6: Room Capacity**
     * The system must reject any new reservation if `(current_room_occupancy + new_party_size) > rooms.max_capacity` for the assigned room.
@@ -342,3 +338,8 @@ Implemented in `utils/room_assignment.py` (`get_candidate_rooms` and `weighted_r
 * **NFR4: Performance**
     * Database indexes must be applied to all foreign keys and frequently queried columns (e.g., `reservations.date`, `reservations.time`) to ensure fast availability lookups.
     * The admin dashboard statistics (FR6.1) must be generated efficiently to avoid long load times.
+
+* **NFR5: Testability**
+    * The backend must include unit tests for pure logic functions (`utils/time_utils.py`, `utils/room_assignment.py`) and integration tests for all route blueprints (public, auth, admin CRUD, blocks, audit, dashboard, profile).
+    * The frontend must include unit tests for the API service layer (`services/api.js`) and component tests for key UI components (e.g., `AdminLogin`, `Dashboard`).
+    * Tests must be runnable without external dependencies (no Postgres required for the backend suite; no running backend required for the frontend suite).

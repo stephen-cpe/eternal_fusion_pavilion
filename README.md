@@ -136,14 +136,8 @@ This guide provides step-by-step instructions to run the Eternal Fusion Pavilion
    npm install
    ```
 
-4. **Configure API Endpoint** (if needed):
-   - Check if there's a configuration file (e.g., `src/config.js` or `.env`) in the frontend directory
-   - Ensure the API URL points to `http://localhost:5000/api`
-   - If using environment variables, create a `.env` file in the frontend directory:
-   ```
-   VITE_API_URL=http://localhost:5000/api
-   REACT_APP_API_URL=http://localhost:5000/api
-   ```
+4. **Configure API Endpoint**:
+   - No configuration needed — the Vite dev proxy automatically routes `/api` requests to the Flask backend on port 5000.
 
 5. **Start React Development Server**:
    ```bash
@@ -161,8 +155,9 @@ This guide provides step-by-step instructions to run the Eternal Fusion Pavilion
    - The React frontend should load successfully
    - Test API connectivity by attempting to log in or interact with features
 
-2. **Default Admin Credentials** (if seeded by init_db.sql):
-   - Check the `init_db.sql` file for any default admin credentials that may have been created
+2. **Default Admin Credentials** (seeded by init_db.sql):
+   - Username: `admin`
+   - Password: `strongpassword`
 
 ---
 
@@ -189,6 +184,20 @@ Each time you want to run the application locally:
 
 ---
 
+## Testing
+
+### Backend Tests (from `backend/` with venv activated)
+```bash
+python -m pytest tests/
+```
+
+### Frontend Tests (from `frontend/`)
+```bash
+npm test
+```
+
+---
+
 ## TODO
 
-* Add Unit Tests. Perform Corrective, Adaptive, and Perfective Maintenance.
+* Conduct further testing and research for future improvements.
