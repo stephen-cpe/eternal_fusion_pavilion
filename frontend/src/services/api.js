@@ -1,366 +1,121 @@
-const getApiBaseUrl = () => {
-  // In development, use the proxy path; in production, use relative path
-  if (process.env.NODE_ENV === "production") {
-    return "/api"
-  } else {
-    // During development, Vite proxy will handle /api requests
-    return "/api"
-  }
-}
+import axios from "axios";
 
-const API_BASE_URL = getApiBaseUrl()
+const API_BASE_URL = "/api";
+
+// A single configured axios instance shared by all services. Credentials are
+// sent on every request so the Flask session cookie is honored.
+const http = axios.create({
+  baseURL: API_BASE_URL,
+  withCredentials: true,
+  headers: { "Content-Type": "application/json" },
+});
+
+// Normalize errors so every caller can `throw new Error(data.error)` exactly as
+// before, regardless of whether the failure was a non-2xx HTTP response or a
+// network/transport error.
+http.interceptors.response.use(
+  (resp) => resp,
+  (error) => {
+    const serverMessage =
+      error.response?.data?.error ||
+      error.response?.data?.message ||
+      error.message ||
+      "Request failed";
+    return Promise.reject(new Error(serverMessage));
+  },
+);
+
+// Helper: build a query string from a filters object, dropping falsy values.
+function buildParams(filters) {
+  const params = {};
+  for (const [k, v] of Object.entries(filters)) {
+    if (v) params[k] = v;
+  }
+  return params;
+}
 
 export const reservationService = {
-  getLocations: async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/reservations/locations`)
-      if (!response.ok) {
-        throw new Error("Failed to fetch locations")
-      }
-      return await response.json()
-    } catch (error) {
-      console.error("Locations fetch error:", error)
-      throw error
-    }
-  },
+  getLocations: () => http.get("/reservations/locations").then((r) => r.data),
 
-  getAvailability: async (locationId, date) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/reservations/availability?location_id=${locationId}&date=${date}`)
-      if (!response.ok) {
-        throw new Error("Failed to fetch availability")
-      }
-      return await response.json()
-    } catch (error) {
-      console.error("Reservation availability error:", error)
-      throw error
-    }
-  },
+  getAvailability: (locationId, date) =>
+    http
+      .get("/reservations/availability", { params: { location_id: locationId, date } })
+      .then((r) => r.data),
 
-  createReservation: async (reservationData) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/reservations/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(reservationData),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to create reservation")
-      }
-
-      return await response.json()
-    } catch (error) {
-      console.error("Reservation creation error:", error)
-      throw error
-    }
-  },
-}
+  createReservation: (reservationData) =>
+    http.post("/reservations/", reservationData).then((r) => r.data),
+};
 
 export const adminService = {
-  login: async (username, password) => {
-    const response = await fetch(`${API_BASE_URL}/admin/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ username, password }),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      throw new Error(data.error || "Login failed")
-    }
-    return data
-  },
-  logout: async () => {
-    const response = await fetch(`${API_BASE_URL}/admin/logout`, {
-      method: "POST",
-      credentials: "include",
-    })
-    if (!response.ok) {
-      const data = await response.json()
-      throw new Error(data.error || "Logout failed")
-    }
-    return await response.json()
-  },
-  getReservations: async (filters = {}) => {
-    const params = new URLSearchParams()
-    if (filters.location_id) params.append("location_id", filters.location_id)
-    if (filters.date) params.append("date", filters.date)
-    if (filters.search) params.append("search", filters.search)
+  login: (username, password) =>
+    http.post("/admin/login", { username, password }).then((r) => r.data),
 
-    const response = await fetch(`${API_BASE_URL}/admin/reservations?${params.toString()}`, {
-      method: "GET",
-      credentials: "include",
-    })
-    if (!response.ok) {
-      const data = await response.json()
-      throw new Error(data.error || "Failed to fetch reservations")
-    }
-    return response.json()
-  },
+  logout: () => http.post("/admin/logout").then((r) => r.data),
 
-  getProfile: async () => {
-    const response = await fetch(`${API_BASE_URL}/admin/profile`, {
-      credentials: "include",
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      throw new Error(data.error || "Failed to fetch profile")
-    }
-    return data
-  },
+  getReservations: (filters = {}) =>
+    http
+      .get("/admin/reservations", { params: buildParams(filters) })
+      .then((r) => r.data),
 
-  updateName: async (fullName) => {
-    const response = await fetch(`${API_BASE_URL}/admin/profile/name`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ fullName }),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      throw new Error(data.error || "Failed to update name")
-    }
-    return data
-  },
+  getProfile: () => http.get("/admin/profile").then((r) => r.data),
 
-  updatePassword: async (passwords) => {
-    const response = await fetch(`${API_BASE_URL}/admin/profile/password`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(passwords),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      throw new Error(data.error || "Failed to update password")
-    }
-    return data
-  },
+  updateName: (fullName) =>
+    http.put("/admin/profile/name", { fullName }).then((r) => r.data),
 
-  getDashboardStats: async (locationId, date) => {
-    const response = await fetch(`${API_BASE_URL}/admin/dashboard/stats?location_id=${locationId}&date=${date}`, {
-      method: "GET",
-      credentials: "include",
-    })
-    if (!response.ok) {
-      const data = await response.json()
-      throw new Error(data.error || "Failed to fetch dashboard stats")
-    }
-    return response.json()
-  },
+  updatePassword: (passwords) =>
+    http.put("/admin/profile/password", passwords).then((r) => r.data),
 
-  getCustomers: async () => {
-    const response = await fetch(`${API_BASE_URL}/admin/customers`, {
-      method: "GET",
-      credentials: "include",
-    });
+  getDashboardStats: (locationId, date) =>
+    http
+      .get("/admin/dashboard/stats", { params: { location_id: locationId, date } })
+      .then((r) => r.data),
 
-    if (!response.ok) {
-      const data = await response.json();
-      throw new Error(data.error || "Failed to fetch customers");
-    }
-    return response.json();
-  },
+  getCustomers: () => http.get("/admin/customers").then((r) => r.data),
 
-  updateCustomerDetails: async (customerId, data) => {
-    const response = await fetch(`${API_BASE_URL}/admin/customers/${customerId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(data),
-    });
-    const responseData = await response.json();
-    if (!response.ok) {
-      throw new Error(responseData.error || "Failed to update customer details");
-    }
-    return responseData;
-  },
+  updateCustomerDetails: (customerId, data) =>
+    http.put(`/admin/customers/${customerId}`, data).then((r) => r.data),
 
-  getSubscribers: async () => {
-    const response = await fetch(`${API_BASE_URL}/admin/subscribers`, {
-      method: "GET",
-      credentials: "include",
-    })
+  getSubscribers: () => http.get("/admin/subscribers").then((r) => r.data),
 
-    if (!response.ok) {
-      const data = await response.json()
-      throw new Error(data.error || "Failed to fetch subscribers")
-    }
-    return response.json()
-  },
-  updateReservation: async (id, status) => {
-    const response = await fetch(`${API_BASE_URL}/admin/reservations/${id}/status`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ status }),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      throw new Error(data.error || "Failed to update reservation")
-    }
-    return data
-  },
+  updateReservation: (id, status) =>
+    http.put(`/admin/reservations/${id}/status`, { status }).then((r) => r.data),
 
+  addReservation: (reservationData) =>
+    http.post("/reservations/", reservationData).then((r) => r.data),
 
-  addReservation: async (reservationData) => {
-    const response = await fetch(`${API_BASE_URL}/reservations/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(reservationData),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      throw new Error(data.error || "Failed to add reservation")
-    }
-    return data
-  },
-  deleteReservation: async (id) => {
-    const response = await fetch(`${API_BASE_URL}/admin/reservations/${id}`, {
-      method: "DELETE",
-      credentials: "include",
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      throw new Error(data.error || "Failed to delete reservation")
-    }
-    return data
-  },
+  deleteReservation: (id) =>
+    http.delete(`/admin/reservations/${id}`).then((r) => r.data),
 
-  getRooms: async (locationId) => {
-    const response = await fetch(`${API_BASE_URL}/admin/rooms?location_id=${locationId}`, {
-      method: "GET",
-      credentials: "include",
-    })
-    if (!response.ok) {
-      const data = await response.json()
-      throw new Error(data.error || "Failed to fetch rooms")
-    }
-    return response.json()
-  },
+  getRooms: (locationId) =>
+    http
+      .get("/admin/rooms", { params: { location_id: locationId } })
+      .then((r) => r.data),
 
-  getBlocks: async (locationId) => {
-    const params = new URLSearchParams()
-    if (locationId) params.append("location_id", locationId)
+  getBlocks: (locationId) =>
+    http
+      .get("/admin/blocks", { params: locationId ? { location_id: locationId } : {} })
+      .then((r) => r.data),
 
-    const response = await fetch(`${API_BASE_URL}/admin/blocks?${params.toString()}`, {
-      method: "GET",
-      credentials: "include",
-    })
-    if (!response.ok) {
-      const data = await response.json()
-      throw new Error(data.error || "Failed to fetch blocks")
-    }
-    return response.json()
-  },
+  createBlock: (blockData) => http.post("/admin/blocks", blockData).then((r) => r.data),
 
-  createBlock: async (blockData) => {
-    const response = await fetch(`${API_BASE_URL}/admin/blocks`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(blockData),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      throw new Error(data.error || "Failed to create block")
-    }
-    return data
-  },
+  deleteBlock: (blockId) => http.delete(`/admin/blocks/${blockId}`).then((r) => r.data),
 
-  deleteBlock: async (blockId) => {
-    const response = await fetch(`${API_BASE_URL}/admin/blocks/${blockId}`, {
-      method: "DELETE",
-      credentials: "include",
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      throw new Error(data.error || "Failed to delete block")
-    }
-    return data
-  },
+  updateReservationDetails: (reservationId, data) =>
+    http.put(`/admin/reservations/${reservationId}/details`, data).then((r) => r.data),
 
-  updateReservationDetails: async (reservationId, data) => {
-    const response = await fetch(`${API_BASE_URL}/admin/reservations/${reservationId}/details`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(data),
-    })
-    const resData = await response.json()
-    if (!response.ok) {
-      throw new Error(resData.error || "Failed to update reservation details")
-    }
-    return resData
-  },
+  updateReservationRoom: (reservationId, roomId) =>
+    http.put(`/admin/reservations/${reservationId}/room`, { room_id: roomId }).then((r) => r.data),
 
-  updateReservationRoom: async (reservationId, roomId) => {
-    const response = await fetch(`${API_BASE_URL}/admin/reservations/${reservationId}/room`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ room_id: roomId }),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      throw new Error(data.error || "Failed to update room assignment")
-    }
-    return data
-  },
+  createAdminReservation: (reservationData) =>
+    http.post("/admin/reservations/create", reservationData).then((r) => r.data),
 
-  createAdminReservation: async (reservationData) => {
-    const response = await fetch(`${API_BASE_URL}/admin/reservations/create`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(reservationData),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      throw new Error(data.error || "Failed to create reservation")
-    }
-    return data
-  },
+  getAuditLog: (limit = 50) =>
+    http
+      .get("/admin/audit-log", { params: { limit } })
+      .then((r) => r.data),
+};
 
-  getAuditLog: async (limit = 50) => {
-    const response = await fetch(`${API_BASE_URL}/admin/audit-log?limit=${limit}`, {
-      method: "GET",
-      credentials: "include",
-    })
-    if (!response.ok) {
-      const data = await response.json()
-      throw new Error(data.error || "Failed to fetch audit log")
-    }
-    return response.json()
-  },
-}
-
-// Newsletter API services
 export const newsletterService = {
-  subscribe: async (email, name) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/newsletter/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, name }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to subscribe")
-      }
-
-      return await response.json()
-    } catch (error) {
-      console.error("Newsletter subscription error:", error)
-      throw error
-    }
-  },
-}
+  subscribe: (email, name) =>
+    http.post("/newsletter/", { email, name }).then((r) => r.data),
+};

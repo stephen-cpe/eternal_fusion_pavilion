@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request, session
-from models import Customer, NewsletterSubscriber, AuditLog 
+from models import Customer, NewsletterSubscriber
 from database import db 
+from utils.audit import log_audit
 from sqlalchemy import or_ # For searching multiple fields
 
 bp = Blueprint('admin_customers', __name__)
@@ -64,17 +65,13 @@ def update_customer(customer_id):
         customer.newsletter_signup = newsletter_signup
 
         # Log the audit
-        log_entry = AuditLog(
+        log_audit(
             admin_id=session['admin_id'],
             action='update_customer',
             entity_type='customer',
             entity_id=customer_id,
-            details={
-                "old": old_details,
-                "new": data
-            }
+            details={"old": old_details, "new": data},
         )
-        db.session.add(log_entry)
         db.session.commit()
 
         return jsonify({'message': 'Customer updated successfully'})

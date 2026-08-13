@@ -1,25 +1,10 @@
 from flask import Blueprint, jsonify, request, session
-from models import ReservationBlock, AuditLog 
+from models import ReservationBlock
 from database import db 
-import json
+from utils.audit import log_audit
 from sqlalchemy.orm import joinedload # To eager load relationships
 
 bp = Blueprint('admin_blocks', __name__)
-
-def log_audit(admin_id, action, entity_type, entity_id, details):
-    """Helper function to log actions."""
-    try:
-        log_entry = AuditLog(
-            admin_id=admin_id,
-            action=action,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            details=details
-        )
-        db.session.add(log_entry)
-        # Commit happens in the main route
-    except Exception as e:
-        print(f"Error logging audit trail: {e}")
 
 @bp.route('/blocks', methods=['GET'])
 def get_blocks():

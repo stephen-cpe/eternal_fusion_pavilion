@@ -13,8 +13,8 @@ export const galleryImages = [
   { src: '/images/reception-italy-1.png', alt: 'Italy Reception Area' },
   { src: '/images/vip-area-2-for-gallery.png', alt: 'Japan VIP Area' },
   { src: '/images/outdoor-terrace-2-spain.png', alt: 'Spain Outdoor Terrace' },
-  { src: '/images/gala_candid_photoshoot.png', alt: 'Founders Gala 2025 Photoshoot' },
-  { src: '/images/behind_the_scenes.png', alt: 'Founders In Action' },
-  { src: '/images/the-founders-1.png', alt: 'Founders Gala 2026 Preparation' },
-  { src: '/images/behind-the-scene-1.jpeg', alt: 'Founders Just Chilling' }
+  { src: '/images/new-menu-2.png', alt: 'Sample Menu' },
+  { src: '/images/group/test-work-photo-4.png', alt: 'Founders In Action' },
+  { src: '/images/group/candid-test-3.png', alt: 'Founders Gala 2026 Preparation' },
+  { src: '/images/group/test-2.png', alt: 'Founders Just Chilling' }
 ];

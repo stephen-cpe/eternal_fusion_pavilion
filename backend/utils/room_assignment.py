@@ -97,21 +97,25 @@ def check_room_blocks(
     Check if a room is blocked during the requested time.
     Returns True if blocked, False if available.
     Can check for 'hard' or 'soft' blocks.
+
+    A block whose start_time equals end_time is treated as all-day: it blocks
+    any reservation whose date falls within the block's date range.
     """
     with conn.cursor() as cursor:
         start_dt = datetime.strptime(start_time, '%H:%M')
         end_dt = start_dt + timedelta(minutes=duration_minutes)
         end_time = end_dt.strftime('%H:%M')
 
-        # Check for blocks that overlap with this time
+        # Check for blocks that overlap with this time.
+        # When start_time = end_time (all-day block), skip the time overlap test
+        # so any reservation on a blocked date is rejected.
         cursor.execute("""
             SELECT COUNT(*)
             FROM reservation_blocks
             WHERE room_id = %s
             AND block_type = %s
             AND %s BETWEEN start_date AND end_date
-            AND start_time < %s::time
-            AND end_time > %s::time
+            AND (start_time = end_time OR (start_time < %s::time AND end_time > %s::time))
         """, (room_id, block_type, date, end_time, start_time))
 
         result = cursor.fetchone()
@@ -128,13 +132,17 @@ def check_location_blocks(
     """
     Check if a location is blocked (hard block) during the requested time.
     Returns True if blocked, False if available.
+
+    A block whose start_time equals end_time is treated as all-day: it blocks
+    any reservation whose date falls within the block's date range.
     """
     with conn.cursor() as cursor:
         start_dt = datetime.strptime(start_time, '%H:%M')
         end_dt = start_dt + timedelta(minutes=duration_minutes)
         end_time = end_dt.strftime('%H:%M')
 
-        # Check for location-wide hard blocks (room_id IS NULL)
+        # Check for location-wide hard blocks (room_id IS NULL).
+        # When start_time = end_time (all-day block), skip the time overlap test.
         cursor.execute("""
             SELECT COUNT(*)
             FROM reservation_blocks
@@ -142,8 +150,7 @@ def check_location_blocks(
             AND room_id IS NULL
             AND block_type = 'hard'
             AND %s BETWEEN start_date AND end_date
-            AND start_time < %s::time
-            AND end_time > %s::time
+            AND (start_time = end_time OR (start_time < %s::time AND end_time > %s::time))
         """, (location_id, date, end_time, start_time))
 
         result = cursor.fetchone()

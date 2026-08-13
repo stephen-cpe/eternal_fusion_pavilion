@@ -96,7 +96,7 @@ function AdminNavigation() {
                 className="flex text-sm bg-gray-800 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-white"
               >
                 <span className="sr-only">Open user menu</span>
-                <img className="h-12 w-12 rounded-full" src="/admin-placholder.jpeg" alt="Admin Profile" />
+                <img className="h-12 w-12 rounded-full object-cover" src="/admin-placholder.jpeg" alt="Admin Profile" />
               </button>
               {isProfileOpen && (
                 <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none">

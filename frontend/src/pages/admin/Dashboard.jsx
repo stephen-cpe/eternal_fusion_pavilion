@@ -16,7 +16,7 @@ const RoomHeatmap = ({ roomData, timeSlots }) => {
 
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full border-collapse">
+      <table className="min-w-full border-collapse" aria-label="Room occupancy heatmap">
         <thead>
           <tr>
             <th className="border border-border px-4 py-2 bg-muted text-left text-sm font-medium">Room</th>

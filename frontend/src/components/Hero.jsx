@@ -31,7 +31,7 @@ function Hero() {
       <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
         style={{
-          backgroundImage: "url('/images/eternal-fusion-pavillion-main.jpeg')",
+          backgroundImage: "url('/images/new-concept-photos-4.png')",
         }}
       >
         <div className="absolute inset-0 overlay-dark"></div>

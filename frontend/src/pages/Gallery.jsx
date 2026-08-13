@@ -33,7 +33,7 @@ function Gallery() {
        <PageHeader 
         title="Gallery"
         description="Discover the essence of Eternal Fusion Pavilion—a curated collection of images highlighting our elegant ambiance and behind-the-scenes glimpses of our cultural collaboration."
-        backgroundImage="/images/gallery.jpeg"
+        backgroundImage="/images/new-walkway-1.png"
       />
 
       {/* Gallery Content Section */}

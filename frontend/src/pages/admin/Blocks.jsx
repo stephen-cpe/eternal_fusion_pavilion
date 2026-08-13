@@ -95,6 +95,19 @@ function Blocks() {
 
   const handleSubmit = (e) => {
     e.preventDefault()
+
+    // Guard against browser autofill polluting the time fields. The form's
+    // `required` attribute accepts 00:00 (midnight), so we validate explicitly
+    // here. Note: 00:00 to 00:00 is a LEGITIMATE all-day block and is allowed.
+    if (!newBlock.start_time || !newBlock.end_time) {
+      toast.error("Please enter a start and end time.")
+      return
+    }
+    if (!newBlock.start_date || !newBlock.end_date) {
+      toast.error("Please enter a start and end date.")
+      return
+    }
+
     createMutation.mutate(newBlock)
   }
 
@@ -182,6 +195,7 @@ function Blocks() {
                   value={newBlock.start_date}
                   onChange={(e) => setNewBlock({ ...newBlock, start_date: e.target.value })}
                   className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                  autoComplete="off"
                   required
                 />
               </div>
@@ -192,6 +206,7 @@ function Blocks() {
                   value={newBlock.end_date}
                   onChange={(e) => setNewBlock({ ...newBlock, end_date: e.target.value })}
                   className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                  autoComplete="off"
                   required
                 />
               </div>
@@ -202,6 +217,7 @@ function Blocks() {
                   value={newBlock.start_time}
                   onChange={(e) => setNewBlock({ ...newBlock, start_time: e.target.value })}
                   className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                  autoComplete="off"
                   required
                 />
               </div>
@@ -212,6 +228,7 @@ function Blocks() {
                   value={newBlock.end_time}
                   onChange={(e) => setNewBlock({ ...newBlock, end_time: e.target.value })}
                   className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                  autoComplete="off"
                   required
                 />
               </div>

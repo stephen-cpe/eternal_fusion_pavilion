@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request, session
-from models import Reservation, Customer, Location, Room, AuditLog
+from models import Reservation, Customer, Location, Room
 from database import db, get_connection, release_connection
 from datetime import datetime, time, date, timedelta
 import json
@@ -14,24 +14,9 @@ from utils.room_assignment import (
     check_room_blocks,
     calculate_room_occupancy
 )
+from utils.audit import log_audit
 
 bp = Blueprint('admin_reservations', __name__)
-
-def log_audit(admin_id, action, entity_type, entity_id, details):
-    """Helper function to log actions."""
-    try:
-        log_entry = AuditLog(
-            admin_id=admin_id,
-            action=action,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            details=details # SQLAlchemy handles JSON conversion if type is JSON
-        )
-        db.session.add(log_entry)
-        # Note: commit should happen within the route's try block
-    except Exception as e:
-        print(f"Error logging audit trail: {e}")
-        # Decide if this should cause the main operation to fail (rollback)
 
 @bp.route('/reservations', methods=['GET'])
 def get_reservations():

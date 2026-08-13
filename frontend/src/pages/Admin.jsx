@@ -77,7 +77,7 @@ function AdminReservations() {
   }
 
   const handleDeleteReservation = (id) => {
-    if (window.confirm("Are you sure you want to delete this reservation?")) {
+    if (!window.confirm("Are you sure you want to delete this reservation?")) {
       return
     }
     deleteMutation.mutate(id)

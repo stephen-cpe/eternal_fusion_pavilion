@@ -8,7 +8,7 @@ export default function AboutPage() {
       <PageHeader 
         title="About Eternal Fusion Pavilion"
         description="A culinary sanctuary where tradition meets innovation, crafting unforgettable experiences across three continents."
-        backgroundImage="/images/about.jpeg"
+        backgroundImage="/images/new-concept-photos-1.png"
       />
         
       <section className="py-16 px-4">
@@ -28,7 +28,7 @@ export default function AboutPage() {
             {/* Chef Michiko Hayashi */}
             <div className="bg-background p-8 rounded-lg shadow-2xl flex flex-col bg-card">
               <div className="flex flex-col items-center text-center">
-                <img src="Chef-Michiko-profile.png" alt="Chef Michiko Hayashi" className="w-60 h-60 rounded-full object-cover mb-6" />
+                <img src="/images/michiko/about.png" alt="Chef Michiko Hayashi" className="w-60 aspect-[2/3] rounded-lg object-cover mb-6" />
                 <h3 className="text-2xl font-bold text-deep-blue mb-2">Chef Michiko Hayashi</h3>
                 <p className="text-golden-brown font-semibold mb-4 ">Chef-Patron & Creative Director</p>
                 <p className="text-muted-foreground leading-relaxed">
@@ -40,7 +40,7 @@ export default function AboutPage() {
             {/* Chef Giovanni Castellani */}
             <div className="bg-background p-8 rounded-lg shadow-2xl flex flex-col bg-card">
               <div className="flex flex-col items-center text-center">
-                <img src="chef-giovanni-profile.png" alt="Chef Giovanni Castellani" className="w-60 h-60 rounded-full object-cover mb-6" />
+                <img src="/images/giovanni/about.png" alt="Chef Giovanni Castellani" className="w-60 aspect-[2/3] rounded-lg object-cover mb-6" />
                 <h3 className="text-2xl font-bold text-deep-blue mb-2">Chef Giovanni Castellani</h3>
                 <p className="text-golden-brown font-semibold mb-4">Culinary Architect & Innovation Director</p>
                 <p className="text-muted-foreground leading-relaxed">
@@ -52,7 +52,7 @@ export default function AboutPage() {
             {/* Doña Esperanza Valdez */}
             <div className="bg-background p-8 rounded-lg shadow-2xl flex flex-col bg-card">
               <div className="flex flex-col items-center text-center">
-                <img src="dona-esperanza-1.png" alt="Doña Esperanza Valdez" className="w-60 h-60 rounded-full object-cover mb-6" />
+                <img src="/images/esperanza/about.png" alt="Doña Esperanza Valdez" className="w-60 aspect-[2/3] rounded-lg object-cover mb-6" />
                 <h3 className="text-2xl font-bold text-deep-blue mb-2">Doña Esperanza Valdez</h3>
                 <p className="text-golden-brown font-semibold mb-4">Restaurateur & Experience Director</p>
                 <p className="text-muted-foreground leading-relaxed">

@@ -95,7 +95,7 @@ function Menu() {
       <PageHeader
         title="Our Menu"
         description="A symphony of flavors where Japanese precision, Italian soul, and Spanish passion unite on every plate."
-        backgroundImage="/images/menu.jpeg"
+        backgroundImage="/images/new-menu-1.png"
       />
 
       <section className="relative py-24 px-4">

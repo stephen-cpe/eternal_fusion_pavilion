@@ -147,22 +147,14 @@ function ReservationForm() {
     e.preventDefault()
 
     if (Number.parseInt(formData.party_size) > 12) {
-      toast.error("For parties larger than 12 guests, please call us directly.")
+      // The amber banner already communicates this; no toast needed.
       return
     }
 
     try {
       const data = await reservationService.createReservation(formData)
 
-      toast.success(`Reservation confirmed! Your reservation number is ${data.reservationNumber}`, {
-        position: "top-right",
-        autoClose: 5000,
-        hideProgressBar: false,
-        closeOnClick: true,
-        pauseOnHover: true,
-        draggable: true,
-        theme: "light",
-      })
+      toast.success(`Reservation confirmed! Your reservation number is ${data.reservationNumber}`)
 
       setMessage(`Reservation confirmed: ${data.message}`)
       setMessageType("success")
@@ -178,15 +170,7 @@ function ReservationForm() {
       })
       setTimeSlots([])
     } catch (err) {
-      toast.error(`Error: ${err.message}`, {
-        position: "top-right",
-        autoClose: 5000,
-        hideProgressBar: false,
-        closeOnClick: true,
-        pauseOnHover: true,
-        draggable: true,
-        theme: "light",
-      })
+      toast.error(`Error: ${err.message}`)
 
       setMessage(`Error: ${err.message}`)
       setMessageType("error")
@@ -203,7 +187,7 @@ function ReservationForm() {
     const date = new Date(dateString + "T00:00:00")
     const dayOfWeek = date.getUTCDay()
     const isSundayOrMonday = dayOfWeek === 0 || dayOfWeek === 1
-    return isSundayOrMonday ? "5:00 PM - 8:30 PM" : "5:00 PM - 10:30 PM"
+    return isSundayOrMonday ? "5:00 PM - 9:00 PM" : "5:00 PM - 11:00 PM"
   }
 
   return (
@@ -224,8 +208,9 @@ function ReservationForm() {
 
       <form onSubmit={handleSubmit} className="space-y-6 bg-card p-8 rounded-xl shadow-lg border border-border">
         <div>
-          <label className="block text-sm font-medium text-deep-blue mb-2">Location*</label>
+          <label htmlFor="location_id" className="block text-sm font-medium text-deep-blue mb-2">Location*</label>
           <select
+            id="location_id"
             name="location_id"
             value={formData.location_id}
             onChange={handleChange}
@@ -242,8 +227,9 @@ function ReservationForm() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-deep-blue mb-2">Date*</label>
+          <label htmlFor="date" className="block text-sm font-medium text-deep-blue mb-2">Date*</label>
           <input
+            id="date"
             type="date"
             name="date"
             value={formData.date}
@@ -259,8 +245,9 @@ function ReservationForm() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-deep-blue mb-2">Time*</label>
+          <label htmlFor="time" className="block text-sm font-medium text-deep-blue mb-2">Time*</label>
           <select
+            id="time"
             name="time"
             value={formData.time}
             onChange={handleChange}
@@ -288,8 +275,9 @@ function ReservationForm() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-deep-blue mb-2">Number of Guests*</label>
+          <label htmlFor="party_size" className="block text-sm font-medium text-deep-blue mb-2">Number of Guests*</label>
           <input
+            id="party_size"
             type="number"
             min="1"
             max="12"
@@ -304,8 +292,9 @@ function ReservationForm() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-deep-blue mb-2">Full Name*</label>
+          <label htmlFor="name" className="block text-sm font-medium text-deep-blue mb-2">Full Name*</label>
           <input
+            id="name"
             type="text"
             name="name"
             value={formData.name}
@@ -317,8 +306,9 @@ function ReservationForm() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-deep-blue mb-2">Email Address*</label>
+          <label htmlFor="email" className="block text-sm font-medium text-deep-blue mb-2">Email Address*</label>
           <input
+            id="email"
             type="email"
             name="email"
             value={formData.email}
@@ -330,8 +320,9 @@ function ReservationForm() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-deep-blue mb-2">Phone (Optional)</label>
+          <label htmlFor="phone" className="block text-sm font-medium text-deep-blue mb-2">Phone (Optional)</label>
           <input
+            id="phone"
             type="tel"
             name="phone"
             value={formData.phone}
@@ -342,8 +333,9 @@ function ReservationForm() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-deep-blue mb-2">Special Requests (Optional)</label>
+          <label htmlFor="special_requests" className="block text-sm font-medium text-deep-blue mb-2">Special Requests (Optional)</label>
           <textarea
+            id="special_requests"
             name="special_requests"
             value={formData.special_requests}
             onChange={handleChange}

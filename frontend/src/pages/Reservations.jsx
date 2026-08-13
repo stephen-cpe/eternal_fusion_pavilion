@@ -10,7 +10,7 @@ function Reservations() {
         <PageHeader 
         title="Make a Reservation"
         description="Reserve your table for a dining experience that transcends borders and creates lasting memories. We look forward to welcoming you to Eternal Fusion Pavilion."
-        backgroundImage="/images/reservations.jpeg"
+        backgroundImage="/images/new-concept-photos-3.png"
       />
         
         {/* Reservation Form Section */}

@@ -7,12 +7,6 @@ import { adminService } from '../services/api';
 
 function AdminLayout() {
 
-  const reservationsQuery = useQuery({
-    queryKey: ['reservations'],
-    queryFn: adminService.getReservations,
-    refetchOnWindowFocus: false,
-  });
-
   const customersQuery = useQuery({
     queryKey: ['customers'],
     queryFn: adminService.getCustomers,
@@ -29,7 +23,7 @@ function AdminLayout() {
     <div className="min-h-screen flex flex-col bg-gray-100">
       <AdminNavigation />
       <main className="flex-grow">
-        <Outlet context={{ reservationsQuery, customersQuery, subscribersQuery }} />
+        <Outlet context={{ customersQuery, subscribersQuery }} />
       </main>
     </div>
   );

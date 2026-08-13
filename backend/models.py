@@ -1,12 +1,18 @@
 from database import db
 from datetime import datetime
 import json
+import os
 
-# Helper function for serialization
-def _datetime_handler(x):
-    if isinstance(x, datetime):
-        return x.isoformat()
-    raise TypeError("Unknown type")
+# Choose a JSON column type that works with the active DB dialect. PostgreSQL
+# uses JSONB; SQLite (used by the test suite) falls back to the generic JSON type.
+from sqlalchemy import JSON
+try:
+    from sqlalchemy.dialects.postgresql import JSONB
+    _JsonType = JSONB
+except ImportError:  # pragma: no cover - postgres extras always present in prod
+    _JsonType = JSON
+if os.environ.get("TESTING") == "true":
+    _JsonType = JSON
 
 class Location(db.Model):
     __tablename__ = 'locations'
@@ -208,7 +214,7 @@ class AuditLog(db.Model):
     action = db.Column(db.String(50), nullable=False)
     entity_type = db.Column(db.String(50), nullable=False)
     entity_id = db.Column(db.Integer)
-    details = db.Column(db.JSON) # Use JSON type if your DB supports it
+    details = db.Column(_JsonType) # JSONB on Postgres, JSON on SQLite (tests)
     created_at = db.Column(db.DateTime(timezone=True), server_default=db.func.current_timestamp())
 
     admin = db.relationship('Admin', back_populates='audit_logs')

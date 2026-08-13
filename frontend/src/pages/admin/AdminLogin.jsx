@@ -30,8 +30,9 @@ function AdminLogin() {
         <h1 className="text-2xl font-bold mb-6 text-center text-deep-blue">Admin Login</h1>
         <form onSubmit={handleLogin}>
           <div className="mb-4">
-            <label className="block text-gray-700 mb-2">Username</label>
+            <label htmlFor="username" className="block text-gray-700 mb-2">Username</label>
             <input
+              id="username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -40,8 +41,9 @@ function AdminLogin() {
             />
           </div>
           <div className="mb-6">
-            <label className="block text-gray-700 mb-2">Password</label>
+            <label htmlFor="password" className="block text-gray-700 mb-2">Password</label>
             <input
+              id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment variables
+.env
+.env.*
+
+# Database
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# Node modules
+frontend/node_modules/
+frontend/build/
+package-lock.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Flask-specific (sessions, instance folder for sensitive data)
+instance/
+flask_session/
+*flask_session/
+
+# Project-specific files
+TODO.txt
+
+# Additional common ignores (temp files, etc.)
+*.tmp
+*.bak
+*.temp
+.DS_Store?
+*.exe
