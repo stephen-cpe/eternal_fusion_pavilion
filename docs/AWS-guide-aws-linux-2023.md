@@ -13,20 +13,7 @@
 
 Deploy the application server with PostgreSQL on cost-effective ARM architecture.
 
-### **1.1 Create Security Group**
-
-1. Navigate to **EC2 Dashboard** → **Security Groups** → **Create security group**
-2. Configure:
-   - **Security group name**: `efp-app-sg`
-   - **Description**: Security group for Eternal Fusion Pavilion app
-3. **Inbound Rules**:
-   - SSH (22) - Your IP only (for initial setup)
-   - HTTP (80) - 0.0.0.0/0
-   - HTTPS (443) - 0.0.0.0/0
-4. **Outbound Rules**: All traffic
-5. Click **Create security group**
-
-### **1.2 Launch EC2 Instance**
+### **1.1 Launch EC2 Instance**
 
 1. Navigate to **EC2 Dashboard** → **Launch instance**
 2. Configure instance:
@@ -35,10 +22,11 @@ Deploy the application server with PostgreSQL on cost-effective ARM architecture
    - **Instance type**: t4g.micro (Free Tier eligible)
    - **Key pair**: Create new key pair (`efp-app.pem`) or use existing
 3. **Network settings**:
-   - VPC: Use default VPC (simplifies setup)
-   - Subnet: Any availability zone
-   - Auto-assign public IP: Enable
-   - Security group: Select `efp-app-sg` created above
+   - In the launch wizard's network settings, ensure the following checkboxes are selected (they are enabled by default but verify):
+     - **Allow SSH traffic from** — your IP (for terminal access)
+     - **Allow HTTP traffic from the internet** (port 80)
+     - **Allow HTTPS traffic from the internet** (port 443)
+   - Ensure **Auto-assign public IP** is enabled.
 4. **Configure storage**: 8 GB GP3 (Free Tier includes 30 GB-month)
 5. **Advanced details**: 
    - User data: Paste the initialization script below
@@ -198,6 +186,15 @@ Set up Gunicorn and systemd for the Flask application.
 
 ### **4.1 Create Gunicorn Service**
 
+Create the log directory (the service config references log files under `/var/log/efp/`):
+
+```bash
+sudo mkdir -p /var/log/efp
+sudo chown ec2-user:nginx /var/log/efp
+```
+
+Create the service file:
+
 ```bash
 sudo nano /etc/systemd/system/efp-backend.service
 ```
@@ -327,13 +324,6 @@ sudo systemctl start certbot-renew.timer
 - The **first** command obtains the certificate and lets Certbot update your Nginx config.
 - The **second** command adds a permanent HTTP → HTTPS redirect.  
   You found that running the `--redirect` variant *first* sometimes failed (likely timeout), so this 2-step flow is safer.
-
-> **Optional: Enable HTTP/2 (without deprecated syntax)**  
-> After Certbot has created the HTTPS server block in `/etc/nginx/conf.d/efp.conf`, you can edit that block and, **inside the `server { ... }` that listens on 443**, add:
-> ```nginx
-> http2 on;
-> ```
-> Do **not** use `listen 443 ssl http2;` since that syntax is deprecated.
 
 ---
 

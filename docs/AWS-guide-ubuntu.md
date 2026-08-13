@@ -207,6 +207,11 @@ Build the static React files and configure Nginx to serve them and proxy API cal
         cd ~/eternal_fusion_pavilion/frontend
         sudo npm install -g n
         sudo n lts
+        hash -r
+        sudo npm install -g npm@latest
+        hash -r
+        node -v
+        npm --version
         npm install
         npm run build
         ```
