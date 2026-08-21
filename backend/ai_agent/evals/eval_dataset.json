@@ -1,0 +1,419 @@
+{
+  "scenarios": [
+    {
+      "id": "eval_001",
+      "category": "menu",
+      "question": "How much is the A5 Wagyu Ribeye?",
+      "assertions": [
+        {"type": "contains", "value": "165"},
+        {"type": "not_contains", "value": "don't know"}
+      ]
+    },
+    {
+      "id": "eval_002",
+      "category": "menu",
+      "question": "What is the cheapest item on your menu?",
+      "assertions": [
+        {"type": "contains", "value": "11"},
+        {"type": "contains_any", "values": ["Espresso", "espresso"]}
+      ]
+    },
+    {
+      "id": "eval_003",
+      "category": "menu",
+      "question": "Do you have any vegetarian options?",
+      "assertions": [
+        {"type": "not_contains", "value": "don't know"}
+      ]
+    },
+    {
+      "id": "eval_004",
+      "category": "menu",
+      "question": "Tell me about the Duck Confit Ramen",
+      "assertions": [
+        {"type": "contains", "value": "65"},
+        {"type": "contains_any", "values": ["Duck", "ramen", "tonkotsu"]}
+      ]
+    },
+    {
+      "id": "eval_005",
+      "category": "menu",
+      "question": "What cocktails do you serve?",
+      "assertions": [
+        {"type": "contains_any", "values": ["Negroni", "Sangria", "Martini", "cocktail"]}
+      ]
+    },
+    {
+      "id": "eval_006",
+      "category": "menu",
+      "question": "How much is the Signature Cocktails?",
+      "assertions": [
+        {"type": "contains", "value": "22"}
+      ]
+    },
+    {
+      "id": "eval_007",
+      "category": "menu",
+      "question": "What desserts do you have?",
+      "assertions": [
+        {"type": "contains_any", "values": ["Tiramisu", "Cheesecake", "Flan", "Souffle", "Souff"]}
+      ]
+    },
+    {
+      "id": "eval_008",
+      "category": "menu",
+      "question": "Can I get the recipe for the wagyu?",
+      "assertions": [
+        {"type": "not_contains", "value": "recipe"}
+      ]
+    },
+    {
+      "id": "eval_009",
+      "category": "menu",
+      "question": "What is the most expensive dish?",
+      "assertions": [
+        {"type": "contains", "value": "165"},
+        {"type": "contains_any", "values": ["Wagyu", "wagyu"]}
+      ]
+    },
+    {
+      "id": "eval_010",
+      "category": "menu",
+      "question": "Do you serve sake?",
+      "assertions": [
+        {"type": "contains", "value": "35"},
+        {"type": "contains_any", "values": ["sake", "Sake", "Daiginjo"]}
+      ]
+    },
+    {
+      "id": "eval_011",
+      "category": "hours",
+      "question": "What are your dining hours on Sunday?",
+      "assertions": [
+        {"type": "contains_any", "values": ["21:00", "9:00 PM", "9 PM"]}
+      ]
+    },
+    {
+      "id": "eval_012",
+      "category": "hours",
+      "question": "Are you open on Tuesday?",
+      "assertions": [
+        {"type": "contains_any", "values": ["23:00", "11:00 PM", "11 PM", "yes", "Yes", "open"]}
+      ]
+    },
+    {
+      "id": "eval_013",
+      "category": "hours",
+      "question": "What time do you close on Saturday?",
+      "assertions": [
+        {"type": "contains_any", "values": ["23:00", "11:00 PM", "11 PM"]}
+      ]
+    },
+    {
+      "id": "eval_014",
+      "category": "hours",
+      "question": "Are you open for lunch?",
+      "assertions": [
+        {"type": "contains_any", "values": ["dinner", "no", "No", "evening", "5:00"]}
+      ]
+    },
+    {
+      "id": "eval_015",
+      "category": "hours",
+      "question": "What are your hours on Monday?",
+      "assertions": [
+        {"type": "contains_any", "values": ["21:00", "9:00 PM", "9 PM"]}
+      ]
+    },
+    {
+      "id": "eval_016",
+      "category": "founders",
+      "question": "Who are the founders of Eternal Fusion Pavilion?",
+      "assertions": [
+        {"type": "contains", "value": "Michiko"},
+        {"type": "contains", "value": "Giovanni"},
+        {"type": "contains", "value": "Esperanza"}
+      ]
+    },
+    {
+      "id": "eval_017",
+      "category": "founders",
+      "question": "Tell me about Chef Michiko Hayashi",
+      "assertions": [
+        {"type": "contains", "value": "Michiko"},
+        {"type": "contains_any", "values": ["Michelin", "star", "shokunin", "Tokyo"]}
+      ]
+    },
+    {
+      "id": "eval_018",
+      "category": "founders",
+      "question": "What is Giovanni's role?",
+      "assertions": [
+        {"type": "contains_any", "values": ["Innovation", "Architect", "Italian", "Chianti"]}
+      ]
+    },
+    {
+      "id": "eval_019",
+      "category": "founders",
+      "question": "Where is Esperanza from?",
+      "assertions": [
+        {"type": "contains_any", "values": ["Barcelona", "Spain", "tapas"]}
+      ]
+    },
+    {
+      "id": "eval_020",
+      "category": "founders",
+      "question": "How many Michelin stars does Michiko have?",
+      "assertions": [
+        {"type": "contains", "value": "three"},
+        {"type": "contains_any", "values": ["3", "three", "third"]}
+      ]
+    },
+    {
+      "id": "eval_021",
+      "category": "locations",
+      "question": "What locations do you have?",
+      "assertions": [
+        {"type": "contains_any", "values": ["JPN", "Japan", "Tokyo"]},
+        {"type": "contains_any", "values": ["ITA", "Italy", "Chianti"]},
+        {"type": "contains_any", "values": ["ESP", "Spain", "Barcelona"]}
+      ]
+    },
+    {
+      "id": "eval_022",
+      "category": "locations",
+      "question": "Tell me about the Japan location",
+      "assertions": [
+        {"type": "contains_any", "values": ["Sakura", "Tokyo", "JPN"]}
+      ]
+    },
+    {
+      "id": "eval_023",
+      "category": "locations",
+      "question": "What rooms does the Italy location have?",
+      "assertions": [
+        {"type": "contains_any", "values": ["Tuscan", "Florentine", "Venetian", "ITA"]}
+      ]
+    },
+    {
+      "id": "eval_024",
+      "category": "policy",
+      "question": "Can I book a table for 15 people?",
+      "assertions": [
+        {"type": "contains_any", "values": ["12", "call", "phone", "large", "contact"]}
+      ]
+    },
+    {
+      "id": "eval_025",
+      "category": "policy",
+      "question": "What is the maximum party size for online booking?",
+      "assertions": [
+        {"type": "contains", "value": "12"}
+      ]
+    },
+    {
+      "id": "eval_026",
+      "category": "policy",
+      "question": "Can I book a table for 20 people online?",
+      "assertions": [
+        {"type": "contains_any", "values": ["call", "phone", "cannot", "can't", "unable"]}
+      ]
+    },
+    {
+      "id": "eval_027",
+      "category": "policy",
+      "question": "What information do you need for a reservation?",
+      "assertions": [
+        {"type": "contains_any", "values": ["name", "email", "date", "time"]}
+      ]
+    },
+    {
+      "id": "eval_028",
+      "category": "policy",
+      "question": "Can I make a reservation for yesterday?",
+      "assertions": [
+        {"type": "contains_any", "values": ["past", "cannot", "can't", "not", "future", "today"]}
+      ]
+    },
+    {
+      "id": "eval_029",
+      "category": "off_topic",
+      "question": "What is the weather today?",
+      "assertions": [
+        {"type": "in_scope_false"}
+      ]
+    },
+    {
+      "id": "eval_030",
+      "category": "off_topic",
+      "question": "Tell me a joke",
+      "assertions": [
+        {"type": "in_scope_false"}
+      ]
+    },
+    {
+      "id": "eval_031",
+      "category": "off_topic",
+      "question": "Who won the World Cup?",
+      "assertions": [
+        {"type": "in_scope_false"}
+      ]
+    },
+    {
+      "id": "eval_032",
+      "category": "off_topic",
+      "question": "What is the stock market doing?",
+      "assertions": [
+        {"type": "in_scope_false"}
+      ]
+    },
+    {
+      "id": "eval_033",
+      "category": "off_topic",
+      "question": "Write me a poem",
+      "assertions": [
+        {"type": "in_scope_false"}
+      ]
+    },
+    {
+      "id": "eval_034",
+      "category": "off_topic",
+      "question": "What is the meaning of life?",
+      "assertions": [
+        {"type": "in_scope_false"}
+      ]
+    },
+    {
+      "id": "eval_035",
+      "category": "brand_voice",
+      "question": "Tell me about the philosophy of Eternal Fusion Pavilion",
+      "assertions": [
+        {"type": "contains_any", "values": ["tradition", "innovation", "culture", "extraordinary"]}
+      ]
+    },
+    {
+      "id": "eval_036",
+      "category": "brand_voice",
+      "question": "What is the promise of Eternal Fusion Pavilion?",
+      "assertions": [
+        {"type": "contains_any", "values": ["memory", "memories", "transformative", "journey"]}
+      ]
+    },
+    {
+      "id": "eval_037",
+      "category": "brand_voice",
+      "question": "What does ethical sourcing mean to EFP?",
+      "assertions": [
+        {"type": "contains_any", "values": ["farmer", "artisan", "Japan", "Italy", "Spain", "sustain"]}
+      ]
+    },
+    {
+      "id": "eval_038",
+      "category": "brand_voice",
+      "question": "Tell me about sustainability at EFP",
+      "assertions": [
+        {"type": "contains_any", "values": ["zero-waste", "zero waste", "sustain", "better world"]}
+      ]
+    },
+    {
+      "id": "eval_039",
+      "category": "menu",
+      "question": "Do you have any gluten-free options?",
+      "assertions": [
+        {"type": "not_contains", "value": "don't know"},
+        {"type": "not_contains", "value": "cannot help"}
+      ]
+    },
+    {
+      "id": "eval_040",
+      "category": "menu",
+      "question": "What is the Bruschetta Trilogy?",
+      "assertions": [
+        {"type": "contains_any", "values": ["Bruschetta", "tomato", "balsamic", "24"]},
+        {"type": "contains", "value": "24"}
+      ]
+    },
+    {
+      "id": "eval_041",
+      "category": "menu",
+      "question": "How much is the Truffle Risotto?",
+      "assertions": [
+        {"type": "contains", "value": "48"}
+      ]
+    },
+    {
+      "id": "eval_042",
+      "category": "menu",
+      "question": "What kind of beer do you have?",
+      "assertions": [
+        {"type": "contains_any", "values": ["Japanese", "Italian", "Spanish", "craft", "ale"]},
+        {"type": "contains", "value": "15"}
+      ]
+    },
+    {
+      "id": "eval_043",
+      "category": "menu",
+      "question": "Describe the Lobster Paella Negra",
+      "assertions": [
+        {"type": "contains_any", "values": ["lobster", "squid ink", "paella", "78"]}
+      ]
+    },
+    {
+      "id": "eval_044",
+      "category": "menu",
+      "question": "What is the Matcha Flan?",
+      "assertions": [
+        {"type": "contains_any", "values": ["matcha", "custard", "caramel", "20"]}
+      ]
+    },
+    {
+      "id": "eval_045",
+      "category": "reservation_flow",
+      "question": "I want to book a table at the Japan location",
+      "assertions": [
+        {"type": "not_contains", "value": "don't know"}
+      ]
+    },
+    {
+      "id": "eval_046",
+      "category": "reservation_flow",
+      "question": "Check availability for Japan on 2026-12-01",
+      "assertions": [
+        {"type": "not_contains", "value": "don't know"}
+      ]
+    },
+    {
+      "id": "eval_047",
+      "category": "reservation_flow",
+      "question": "Book a table for 50 people",
+      "assertions": [
+        {"type": "contains_any", "values": ["12", "call", "phone", "cannot", "can't", "large"]}
+      ]
+    },
+    {
+      "id": "eval_048",
+      "category": "founders",
+      "question": "Where did Michiko study cooking?",
+      "assertions": [
+        {"type": "contains_any", "values": ["Milan", "Barcelona", "Tokyo", "ryokan"]}
+      ]
+    },
+    {
+      "id": "eval_049",
+      "category": "founders",
+      "question": "What is Esperanza's philosophy of hospitality?",
+      "assertions": [
+        {"type": "contains_any", "values": ["meditation", "present", "experience", "space"]}
+      ]
+    },
+    {
+      "id": "eval_050",
+      "category": "integration",
+      "question": "What is the Branzino en Papillote?",
+      "assertions": [
+        {"type": "contains_any", "values": ["sea bass", "branzino", "bottarga", "72"]},
+        {"type": "contains", "value": "72"}
+      ]
+    }
+  ]
+}

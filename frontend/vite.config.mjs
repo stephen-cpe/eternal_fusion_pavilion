@@ -9,6 +9,13 @@ export default defineConfig({
     port: 3000,
     open: true,
     proxy: {
+      // AI agent proxy MUST come before the Flask proxy — Vite matches in
+      // declaration order, and a bare "/api" would swallow "/api/ai".
+      "/api/ai": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+        secure: false,
+      },
       "/api": {
         target: "http://localhost:5000",
         changeOrigin: true,

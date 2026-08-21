@@ -1,0 +1,2 @@
+{"type": "llm_call", "model": "deepseek-v4-flash:cloud", "messages_count": 2, "latency_ms": 244963, "content_chars": 543, "tool_calls_count": 0, "error": null, "seq": 1, "timestamp": "2026-08-21T07:33:43.572243"}
+{"type": "llm_call", "model": "deepseek-v4-flash:cloud", "messages_count": 2, "latency_ms": 2377, "content_chars": 2, "tool_calls_count": 0, "error": null, "seq": 2, "timestamp": "2026-08-21T07:33:45.964314"}

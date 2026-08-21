@@ -1,5 +1,12 @@
 # **Deployment Guide on AWS EC2 using Ubuntu**
 
+> **DISCLAIMER: This guide is currently outdated and unusable.**
+> It was written before the AI Agent (FastAPI on port 8000), pgvector,
+> and Ollama integration were added. The deployment steps do not cover
+> the AI agent service, the pgvector extension, or the separate venv.
+> This guide will be updated in the future to reflect the current
+> three-service architecture (Flask + FastAI agent + React frontend).
+
 This guide provides step-by-step instructions to deploy a full-stack application (Flask backend + React frontend) on an AWS EC2 instance running **Ubuntu 26.04 LTS**.
 
 The production environment uses **Nginx** as a reverse proxy and static file server, **Gunicorn** as the WSGI server for Flask, and **PostgreSQL** as the database.

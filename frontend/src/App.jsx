@@ -12,6 +12,7 @@ import Reservations from "./pages/Reservations"
 import Gallery from "./pages/Gallery"
 import Navigation from "./components/Navigation"
 import Footer from "./components/Footer"
+import ConciergeChat from "./components/ConciergeChat"
 import { ThemeProvider } from "./components/ThemeProvider"
 import { ToastContainer } from "react-toastify"
 import "react-toastify/dist/ReactToastify.css"
@@ -148,6 +149,9 @@ function App() {
         </main>
 
         {!isAdminRoute && <Footer />}
+
+        {/* AI Concierge chat widget — only on guest-facing pages, never in admin */}
+        {!isAdminRoute && <ConciergeChat />}
 
         <ToastContainer
           position="bottom-right"

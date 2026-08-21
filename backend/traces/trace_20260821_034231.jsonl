@@ -1,0 +1,1 @@
+{"type": "llm_call", "model": "deepseek-v4-flash:cloud", "messages_count": 2, "latency_ms": 1686, "content_chars": 31, "tool_calls_count": 0, "error": null, "seq": 1, "timestamp": "2026-08-21T03:42:31.328380"}

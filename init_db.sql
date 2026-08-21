@@ -1,6 +1,9 @@
 -- Eternal Fusion Pavilion - Enhanced Database Schema
 
 -- Drop existing tables if they exist (for clean migration)
+DROP TABLE IF EXISTS efp_knowledge_chunks CASCADE;
+DROP TABLE IF EXISTS guest_ai_memory CASCADE;
+DROP TABLE IF EXISTS chat_threads CASCADE;
 DROP TABLE IF EXISTS audit_log CASCADE;
 DROP TABLE IF EXISTS reservation_blocks CASCADE;
 DROP TABLE IF EXISTS reservations CASCADE;
@@ -53,6 +56,57 @@ CREATE TABLE admins (
         CHECK (role IN ('admin', 'manager')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ===========================================================================
+-- AI Agent tables (Project Sanctuary)
+-- Requires: CREATE EXTENSION IF NOT EXISTS vector; (run once as superuser)
+-- These tables belong to the AI agent service (backend/ai_agent/) but live
+-- in the same Postgres DB. init_db.sql is the single source of truth for the
+-- physical schema (Architectural Guardrail #3).
+-- ===========================================================================
+
+-- efp_knowledge_chunks: RAG knowledge base (menu, about, policies).
+-- Each row is one retrievable document with its embedding.
+CREATE TABLE efp_knowledge_chunks (
+    id TEXT PRIMARY KEY,                       -- e.g. "menu_mains_wagyu"
+    source VARCHAR(20) NOT NULL,               -- "menu" | "about" | "policy"
+    section VARCHAR(60) NOT NULL,              -- e.g. "Main Courses", "Founders"
+    name VARCHAR(120) NOT NULL,                -- dish/topic name
+    price VARCHAR(20),                         -- nullable; menu items only
+    content TEXT NOT NULL,                     -- the retrievable text
+    embedding vector(1024) NOT NULL,           -- qwen3-embedding:0.6b = 1024 dims
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- HNSW index for fast approximate nearest neighbor search (cosine distance).
+CREATE INDEX ix_efp_knowledge_embedding
+    ON efp_knowledge_chunks USING hnsw (embedding vector_cosine_ops);
+
+-- chat_threads: conversation state for the LangGraph checkpointer (Phase 3+).
+CREATE TABLE chat_threads (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    guest_identifier VARCHAR(255),             -- customer email or anon browser id
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- guest_ai_memory: long-term cross-session memory (Phase 4).
+-- memory_type: "semantic" (preferences) | "episodic" (events) | "procedural" (how-to)
+CREATE TABLE guest_ai_memory (
+    id SERIAL PRIMARY KEY,
+    guest_identifier VARCHAR(255) NOT NULL,    -- customer email or anon id
+    memory_type VARCHAR(20) NOT NULL
+        CHECK (memory_type IN ('semantic', 'episodic', 'procedural')),
+    content TEXT NOT NULL,                     -- the extracted fact
+    embedding vector(1024),                    -- nullable until Phase 4
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX ix_guest_ai_memory_guest
+    ON guest_ai_memory (guest_identifier);
+CREATE INDEX ix_guest_ai_memory_embedding
+    ON guest_ai_memory USING hnsw (embedding vector_cosine_ops)
+    WHERE embedding IS NOT NULL;
 
 
 -- Create reservations table

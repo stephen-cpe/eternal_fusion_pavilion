@@ -1,5 +1,5 @@
 # Software Requirement Specification
-# Eternal Fusion Pavilion - Reservation Management System
+# Eternal Fusion Pavilion - Reservation Management System + AI Concierge
 
 ---
 
@@ -7,23 +7,47 @@
 
 ### 1.1 Purpose
 
-This document specifies the software requirements for the Eternal Fusion Pavilion (EFP) Reservation Management System. It describes the system's functional and non-functional requirements, its interfaces, and its high-level architecture. This system is a full-stack web application designed to manage restaurant reservations across multiple international locations.
+This document specifies the software requirements for the Eternal Fusion
+Pavilion (EFP) Reservation Management System and its autonomous AI concierge
+agent ("Project Sanctuary"). It describes the system's functional and
+non-functional requirements, its interfaces, and its high-level architecture.
+The system is a full-stack web application that manages restaurant reservations
+across multiple international locations and provides an AI-powered concierge
+that answers guest questions, checks availability, makes bookings, remembers
+guest preferences across sessions, and escalates to human staff when needed.
 
 ### 1.2 Scope
 
-The system provides two primary interfaces:
+The system provides three primary components:
 
-1.  **Public-Facing Frontend:** A React Single Page Application (SPA) that allows potential customers to view restaurant locations, check reservation availability, and book a table. It also includes a newsletter subscription form.
-2.  **Admin Backend:** A secure Flask REST API and corresponding React-based admin dashboard. This interface is for restaurant staff and managers to perform secure login, manage all reservations, manually create bookings, manage customer data, define unavailable time blocks, and audit administrative actions.
+1. **Public-Facing Frontend:** A React Single Page Application (SPA) that
+   allows potential customers to view restaurant locations, check reservation
+   availability, book a table, subscribe to a newsletter, and chat with an AI
+   concierge via a floating chat widget.
+2. **Admin Backend (Flask):** A secure Flask REST API and corresponding
+   React-based admin dashboard for restaurant staff to perform secure login,
+   manage all reservations, manually create bookings, manage customer data,
+   define unavailable time blocks, and audit administrative actions.
+3. **AI Agent Backend (FastAPI):** An autonomous AI concierge service that
+   uses LangGraph orchestration, RAG (Retrieval-Augmented Generation) with
+   pgvector, local Ollama embeddings, Ollama Cloud for LLM chat, tool calling
+   to the Flask reservation API, and long-term guest memory. It runs as a
+   separate process on port 8000 and is accessible via the frontend chat
+   widget.
 
 ### 1.3 Definitions and Acronyms
 
 | Term | Definition |
 | :--- | :--- |
 | **EFP** | Eternal Fusion Pavilion. The name of the restaurant and this software system. |
-| **System** | The EFP Reservation Management System as a whole. |
+| **System** | The EFP Reservation Management System + AI Concierge as a whole. |
 | **SPA** | Single Page Application. The React frontend. |
-| **API** | Application Programming Interface. The Flask backend. |
+| **API** | Application Programming Interface. The Flask backend (port 5000). |
+| **AI Agent** | The FastAPI AI concierge service (port 8000). |
+| **RAG** | Retrieval-Augmented Generation. The AI technique of retrieving relevant context from a knowledge base before generating an answer. |
+| **pgvector** | PostgreSQL extension for vector similarity search, used to store and query embedded knowledge documents. |
+| **LangGraph** | A graph-based agent orchestration framework used to build the concierge's state machine. |
+| **SSE** | Server-Sent Events. Used for streaming LLM responses to the frontend. |
 | **Public User** | A non-authenticated user (customer) accessing the public website. |
 | **Admin User** | An authenticated staff member with privileged access. |
 | **Admin** | A standard Admin User role. |
@@ -31,8 +55,11 @@ The system provides two primary interfaces:
 | **Block** | A period of time, defined by an Admin, when reservations are not available. |
 | **Hard Block** | A reservation block that cannot be overridden by any user. |
 | **Soft Block** | A reservation block that can only be overridden by a user with the 'Manager' role. |
-| **Dining Hours** | Service hours defined in `utils/time_utils.py`. Tuesday–Saturday 17:00–23:00; Sunday & Monday 17:00–21:00. |
+| **Dining Hours** | Service hours: Tuesday-Saturday 17:00-23:00; Sunday & Monday 17:00-21:00. |
 | **Slot** | A 30-minute dining interval generated from the dining hours for a given date. |
+| **Thread ID** | A UUID identifying a single chat conversation session, used for multi-turn continuity. |
+| **Guest Identifier** | A stable anonymous UUID identifying a guest across sessions, used for long-term memory. |
+| **HITL** | Human-in-the-Loop. The pattern where the agent pauses and escalates to a human. |
 
 ---
 
@@ -40,11 +67,34 @@ The system provides two primary interfaces:
 
 ### 2.1 Product Perspective
 
-The EFP is a self-contained, client-server system. It is composed of three main components:
+The EFP is a client-server system composed of four main components:
 
-1.  **Frontend:** A React SPA (built with Vite) that runs in the user's web browser. It communicates with the backend via HTTP requests. The dev server runs on port 3000 and proxies `/api` requests to the Flask backend on port 5000 (`vite.config.mjs`). The production build outputs static files to `frontend/dist`, which are served by Nginx (or Flask's catch-all route in development).
-2.  **Backend:** A Python Flask server that exposes a JSON-based REST API. It handles all business logic, data validation, and authentication. Routes are organized as Flask Blueprints registered under the configurable `API_PREFIX` (default `/api`). Shared helpers live in `utils/` (`time_utils.py`, `room_assignment.py`, `audit.py`, `dashboard.py`).
-3.  **Database:** A PostgreSQL database, interacted with via the Flask backend using SQLAlchemy (ORM, primary data access layer in `models.py` and route handlers) and `psycopg2` (direct connection pool in `database.py`, used by the utility functions in `utils/room_assignment.py` for constraint queries).
+1. **Frontend (React SPA):** Runs in the user's web browser on port 3000
+   (dev) or served by Nginx (production). Communicates with the Flask backend
+   via `/api/*` and with the AI agent via `/api/ai/*`. The Vite dev proxy
+   routes `/api/ai` to port 8000 and `/api` to port 5000. Includes a floating
+   concierge chat widget (`ConciergeChat`) on all guest-facing pages.
+
+2. **Flask Backend (port 5000):** A Python Flask server exposing a JSON REST
+   API. Handles all reservation business logic, data validation,
+   authentication, admin dashboard, and customer management. Routes are
+   organized as Flask Blueprints under `/api`. Uses SQLAlchemy (ORM) and
+   psycopg2 (connection pool) for database access.
+
+3. **AI Agent Backend (port 8000):** A FastAPI service running a LangGraph
+   state machine with 8 nodes (memory_retrieve, triage, rag, agent, tools,
+   escalation, response, memory_store). Uses local Ollama for embeddings
+   (qwen3-embedding:0.6b, 1024-dim), Ollama Cloud for chat
+   (deepseek-v4-flash:cloud), pgvector for knowledge retrieval, and HTTP
+   tool wrappers that call the Flask reservation API. Maintains an independent
+   SQLAlchemy engine pointing at the same Postgres database. Streams responses
+   via SSE (sse-starlette).
+
+4. **Database (PostgreSQL 18 + pgvector):** A single PostgreSQL database
+   shared by both backends. The Flask app owns the core tables (locations,
+   rooms, reservations, customers, etc.). The AI agent owns three AI-specific
+   tables (efp_knowledge_chunks, chat_threads, guest_ai_memory). The schema is
+   defined in a single `init_db.sql` file (single source of truth).
 
 ### 2.2 Product Functions
 
@@ -55,49 +105,100 @@ The system shall provide the following high-level functions:
     * Check real-time reservation availability for a specific location and date.
     * Submit a new reservation request.
     * Subscribe to a marketing newsletter.
+    * Chat with the AI concierge (ask about menu, founders, hours, locations,
+      policies; check availability; make reservations; be remembered across
+      sessions).
 
 * **Admin Users:**
     * Securely log in and out of the admin dashboard.
-    * View a "dashboard" with at-a-glance statistics and a room occupancy "heatmap" for a given day.
-    * Perform full CRUD (Create, Read, Update, Delete) operations on all reservations.
+    * View a "dashboard" with at-a-glance statistics and a room occupancy heatmap.
+    * Perform full CRUD operations on all reservations.
     * Manually override the room assignment of an existing reservation.
-    * Perform CRUD operations on customer records (read + update are implemented; create/delete are indirect via reservation creation).
-    * Perform CRUD operations on reservation blocks (availability management).
-    * View the list of rooms for a location (used by block/reservation editors).
+    * Perform CRUD operations on customer records.
+    * Perform CRUD operations on reservation blocks.
+    * View the list of rooms for a location.
     * View a list of all newsletter subscribers.
     * View an audit log of all significant admin actions.
     * Manage their own admin profile (name, password).
 
+* **AI Agent:**
+    * Answer guest questions about the menu, founders, locations, policies,
+      and dining hours via RAG (grounded in 35 knowledge documents stored in
+      pgvector).
+    * Check availability and make reservations by calling the Flask API via
+      tool wrappers (never bypassing business rules).
+    * Remember guest preferences across sessions (allergies, preferred
+      locations, name) via long-term memory (guest_ai_memory table + LLM
+      fact extraction).
+    * Maintain multi-turn conversation continuity within a chat session
+      (LangGraph MemorySaver checkpointer keyed by thread_id).
+    * Escalate to a human when a request exceeds its authority (party size
+      > 12, soft-block overrides, complaints).
+    * Stream responses to the frontend via SSE.
+
 ### 2.2.1 Frontend Application Inventory
 
-The public SPA (`src/App.jsx`) exposes the following routes: `/` (Home), `/menu`, `/about`, `/reservations`, `/gallery`, and `/admin` (login). Protected admin routes (under `/admin/*`, guarded by `ProtectedRoute`) render within `AdminLayout` and include: Dashboard, Reservations, Blocks, Customers, Newsletter, and Audit Log. The admin UI components include `AdminNavigation`, `AddReservationModal`, `EditReservationModal`, `EditCustomerModal`, `ChangeNameModal`, and `ChangePasswordModal`.
+The public SPA (`src/App.jsx`) exposes: `/` (Home), `/menu`, `/about`,
+`/reservations`, `/gallery`, and `/admin` (login). Protected admin routes
+(under `/admin/*`, guarded by `ProtectedRoute`) render within `AdminLayout`
+and include: Dashboard, Reservations, Blocks, Customers, Newsletter, and
+Audit Log. A floating `ConciergeChat` widget is mounted on all guest-facing
+pages (never in admin). The admin UI components include `AdminNavigation`,
+`AddReservationModal`, `EditReservationModal`, `EditCustomerModal`,
+`ChangeNameModal`, and `ChangePasswordModal`.
 
 ### 2.3 User Characteristics
 
 | User Role | Description | Permissions |
 | :--- | :--- | :--- |
-| **Public User** | Any individual accessing the public website. | Read-only access to locations and availability. Can create new reservations and newsletter subscriptions. |
+| **Public User** | Any individual accessing the public website. | Read-only access to locations and availability. Can create new reservations, subscribe to newsletter, and chat with the AI concierge. |
 | **Admin** | A staff member with a registered account. | Full CRUD on reservations, customers, and blocks. Cannot override 'soft' blocks. |
 | **Manager** | A staff member with the `manager` role. | All 'Admin' permissions, plus the ability to override 'soft' reservation blocks. |
+| **AI Agent** | The autonomous concierge service. | Can call Flask API tools (get_locations, check_availability, create_reservation) on behalf of guests. Enforces the > 12 party size escalation rule client-side. Cannot access admin endpoints. |
 
 ### 2.4 Operating Environment
 
-* **Frontend:** The system shall be operable in all modern, JavaScript-enabled web browsers (e.g., Chrome, Firefox, Safari, Edge). Built with React 19 and Vite 8, styled with Tailwind CSS 4, with `@tanstack/react-query` for server state, `axios` for HTTP, `react-toastify` for notifications, and `framer-motion` for animations. Vite proxies `/api/*` to the backend during development. Testing is via Vitest + `@testing-library/react`.
-* **Backend:** The system shall run in a Python 3 environment (Flask 3.1 with Flask-Session 0.8, Flask-SQLAlchemy 3.1, Flask-Cors 6.0, bcrypt, and psycopg2-binary). Gunicorn is used as the WSGI server in production. Testing is via pytest + pytest-flask.
-* **Database:** The system requires a running PostgreSQL database instance.
+* **Frontend:** Modern web browsers (Chrome, Firefox, Safari, Edge). Built
+  with React 19, Vite, Tailwind CSS 4, @tanstack/react-query, axios,
+  react-toastify, framer-motion, and lucide-react. Vite proxies `/api/ai/*`
+  to port 8000 and `/api/*` to port 5000 during development. Testing via
+  Vitest + @testing-library/react (64 tests).
+* **Flask Backend:** Python 3.14+ with Flask 3.1, Flask-Session 0.8,
+  Flask-SQLAlchemy 3.1, Flask-Cors 6.0, bcrypt, and psycopg2-binary. Gunicorn
+  as the WSGI server in production. Testing via pytest + pytest-flask.
+* **AI Agent Backend:** Python 3.14+ with FastAPI, uvicorn, LangGraph 1.x,
+  langchain-ollama, langchain-text-splitters, sse-starlette, SQLAlchemy,
+  psycopg2-binary, and python-dotenv. Local Ollama for embeddings
+  (qwen3-embedding:0.6b). Ollama Cloud for chat LLM
+  (deepseek-v4-flash:cloud). Testing via pytest (112 tests in mock mode).
+* **Database:** PostgreSQL 18 with pgvector 0.8.6 extension.
 
 ### 2.5 Design and Implementation Constraints
 
-* The frontend and backend must be decoupled.
-* All communication between frontend and backend must be via the JSON-based REST API.
-* The backend must be stateless (from an application perspective), relying on server-side filesystem sessions (`Flask-Session`, `SESSION_TYPE='filesystem'`, stored under `backend/.flask_session/`) for managing authentication state.
-* CORS is enabled for the `/api/*` path with `supports_credentials=True`, allowing the configured development origins (`localhost:3000`, `127.0.0.1:3000`, and the host machine's LAN IP on port 3000).
-* All admin-level API endpoints (excluding `/login`) must be protected and require an active, authenticated session.
-* Admin passwords must be securely hashed in the database using `bcrypt`.
-* The system shall use a weighted-random algorithm for automatic room assignment.
-* The database structure is fixed as defined in the `init_db.sql` schema.
-* Configuration is loaded from environment variables via `python-dotenv` (`backend/config.py`); a standalone `backend/create_admin.py` script is provided to (re)seed the default admin account.
-* The system includes an automated test suite: backend tests run via `pytest` (unit tests for `utils/` + integration tests for all route blueprints, using SQLite in-memory); frontend tests run via `Vitest` + `@testing-library/react` (service-layer and component tests). Tests are executed with `cd backend && pytest tests/` and `cd frontend && npm test` respectively.
+* The frontend and backends must be decoupled.
+* All communication between frontend and backends must be via JSON-based REST
+  APIs (Flask) or SSE streaming (FastAPI agent).
+* The AI agent runs in a separate process from the Flask app (Architectural
+  Guardrail #1: process boundary). LLM calls are slow and must not block
+  Flask's synchronous worker pool.
+* The AI agent uses its own SQLAlchemy engine pointing at the same Postgres
+  database. It does NOT import the Flask `db` object (Architectural Guardrail
+  #2: independent engine).
+* The database schema is defined in a single `init_db.sql` file (single source
+  of truth). AI-specific tables are created there, not via
+  `Base.metadata.create_all()` (Architectural Guardrail #3).
+* All guest-facing AI responses must stream via SSE (Architectural Guardrail
+  #4: streaming-first).
+* Tools wrap the Flask API; they never bypass it. Business rules (capacity
+  validation, block checking, room assignment) live in one place: the Flask
+  app (Architectural Guardrail #6).
+* The agent never writes to core tables (reservations, customers) directly.
+  AI-specific state gets its own tables (Architectural Guardrail #7).
+* Secrets stay in `.env` (`OLLAMA_CLOUD_API_KEY`). Nothing sensitive ever
+  lands in the repo (Architectural Guardrail #9).
+* Admin passwords must be securely hashed using bcrypt.
+* The system uses a weighted-random algorithm for automatic room assignment.
+* Configuration is loaded from environment variables via python-dotenv.
 
 ---
 
@@ -105,7 +206,10 @@ The public SPA (`src/App.jsx`) exposes the following routes: `/` (Home), `/menu`
 
 ### 3.1 Database Schema Requirements
 
-The system must persist data according to the following schema.
+The system must persist data according to the schema defined in
+`init_db.sql`. Tables are grouped by ownership:
+
+#### Core Tables (owned by Flask app)
 
 | Table | Purpose | Key Fields |
 | :--- | :--- | :--- |
@@ -113,233 +217,231 @@ The system must persist data according to the following schema.
 | `rooms` | Stores bookable rooms within a location. | `id`, `location_id` (FK), `code` (unique), `name`, `max_capacity`, `is_active` |
 | `customers` | Stores guest information. | `id`, `name`, `email` (unique), `phone`, `newsletter_signup` |
 | `admins` | Stores admin user accounts. | `id`, `username` (unique), `password_hash`, `full_name`, `role` ('admin' or 'manager') |
-| `reservations` | Core table for all bookings. | `id`, `reservation_number` (unique), `customer_id` (FK ON DELETE CASCADE), `location_id` (FK ON DELETE CASCADE), `room_id` (FK ON DELETE SET NULL), `date`, `time`, `duration_minutes` (default 60), `party_size` (CHECK `> 0 AND <= 30`), `status` (CHECK in 'confirmed','cancelled','no-show','completed'), `special_requests` |
-| `reservation_blocks` | Admin-defined unavailable times. | `id`, `location_id` (FK ON DELETE CASCADE), `room_id` (FK ON DELETE CASCADE, nullable), `start_date`, `end_date`, `start_time`, `end_time`, `block_type` (CHECK 'hard'/'soft'), `reason`, `created_by` (FK to admins) |
-| `newsletter_subscribers` | List of newsletter signups. | `id`, `email` (unique), `name`, `status` ('active' or 'unsubscribed') |
+| `reservations` | Core table for all bookings. | `id`, `reservation_number` (unique), `customer_id` (FK), `location_id` (FK), `room_id` (FK), `date`, `time`, `duration_minutes`, `party_size`, `status`, `special_requests` |
+| `reservation_blocks` | Admin-defined unavailable times. | `id`, `location_id` (FK), `room_id` (FK, nullable), `start_date`, `end_date`, `start_time`, `end_time`, `block_type` ('hard'/'soft'), `reason`, `created_by` |
+| `newsletter_subscribers` | List of newsletter signups. | `id`, `email` (unique), `name`, `status` |
 | `audit_log` | Tracks admin actions. | `id`, `admin_id` (FK), `action`, `entity_type`, `entity_id`, `details` (JSONB) |
 
-**Seed Data (`init_db.sql`):** Three locations (JPN, ITA, ESP) each with 6 rooms (`max_capacity=30`); one default admin (`admin` / `strongpassword`, role `admin`); three sample customers; two sample reservations. Indexes are created on `reservations(date)`, `reservations(time)`, `reservations(location_id)`, `reservations(room_id)`, `reservations(status)`, `reservations(date, time)`, `rooms(location_id)`, and `reservation_blocks(location_id)`, `reservation_blocks(room_id)`, `reservation_blocks(start_date, end_date)`.
+#### AI Agent Tables (owned by FastAPI agent, created in init_db.sql)
+
+| Table | Purpose | Key Fields |
+| :--- | :--- | :--- |
+| `efp_knowledge_chunks` | RAG knowledge base (menu, about, policies). Each row is one retrievable document with a 1024-dim embedding. | `id` (TEXT PK), `source`, `section`, `name`, `price`, `content`, `embedding` (vector(1024)), `created_at` |
+| `chat_threads` | Conversation state for LangGraph checkpointer (future Postgres-backed checkpointer). | `id` (UUID PK), `guest_identifier`, `created_at`, `updated_at` |
+| `guest_ai_memory` | Long-term cross-session guest memories (semantic, episodic, procedural). | `id` (SERIAL PK), `guest_identifier`, `memory_type`, `content`, `embedding` (vector(1024), nullable), `created_at` |
+
+**Indexes:** HNSW cosine indexes on `efp_knowledge_chunks.embedding` and
+`guest_ai_memory.embedding` (partial, WHERE embedding IS NOT NULL).
+B-tree indexes on `guest_ai_memory(guest_identifier)`.
+
+**Seed Data:** Three locations (JPN, ITA, ESP) each with 6 rooms
+(max_capacity=30); one default admin (admin/strongpassword); three sample
+customers; two sample reservations. 35 knowledge documents are ingested
+separately via `python -m rag.ingest_knowledge`.
 
 ### 3.2 Functional Requirements
 
-#### FR1: Public User Module
+#### FR1: Public User Module (Flask)
 
-* **FR1.1: View Locations**
-    * The system shall provide a public API endpoint (`GET /api/reservations/locations`) to list all `locations` ordered by name. The response returns `{ "locations": [ ... ] }`.
+(Same as before — view locations, check availability, create reservation,
+newsletter subscription. See the Flask routes in `backend/routes/reservations.py`
+and `backend/routes/newsletter.py`.)
 
-* **FR1.2: Check Availability**
-    * The system shall provide a public API endpoint (`GET /api/reservations/availability`) that accepts a `location_id` and `date` (YYYY-MM-DD).
-    * It shall reject requests for past dates (HTTP 400).
-    * It shall return a list of all 30-minute time slots for that day's dining hours (per `utils/time_utils.py`), along with a boolean `available` status, `slotsLeft`, and `guestsAvailable` for each.
-    * The `available` status must be `false` if `validate_reservation_constraints` (FR4) fails for a 1-guest party.
+#### FR2: Admin Authentication Module (Flask)
 
-* **FR1.3: Create Reservation**
-    * The system shall provide a public API endpoint (`POST /api/reservations/`) to create a new reservation.
-    * **FR1.3.1 (Input):** The endpoint shall require `location_id`, `date`, `time`, `party_size`, `name`, and `email`. The `phone` and `special_requests` fields are optional.
-    * **FR1.3.2 (Customer):** The system shall find a `customer` by `email`. If found, it shall update the customer's `name` and `phone` from the request and refresh `updated_at`. If not found, it shall create a new customer (with `newsletter_signup=false`).
-    * **FR1.3.3 (Validation - Party):** The system must reject the request if `party_size` is not between 1 and 12 (inclusive). The error response includes a `requiresCall: true` flag when `party_size > 12`.
-    * **FR1.3.4 (Validation - Date/Time):** The system must reject past dates and times outside the dining hours for the given `date` (as defined in `utils/time_utils.py`).
-    * **FR1.3.5 (Validation - Constraints):** The system must validate the request against all reservation constraints (see FR4). The default `duration_minutes` is 60.
-    * **FR1.3.6 (Room Assignment):** On successful validation, the system must automatically assign a `room_id` using the logic in FR5.
-    * **FR1.3.7 (Output):** The system shall generate a unique `reservation_number` (format `LOC-XXXXX`, e.g., "JPN-A1B2C", generated by `utils/room_assignment.generate_reservation_number`), save the reservation with `status='confirmed'`, and return HTTP 201 with `{ id, reservationNumber, message, room: { code, name } }`.
+(Same as before — login, logout, access control. See
+`backend/routes/admin_auth.py`.)
 
-* **FR1.4: Newsletter Subscription**
-    * The system shall provide a public API endpoint (`POST /api/newsletter/`) to subscribe a user.
-    * The endpoint shall validate the email format and return HTTP 400 on invalid/missing email.
-    * If the email does not exist, it shall be created with 'active' status (HTTP 201).
-    * If the email exists and is 'active', it shall return a "already subscribed" message (HTTP 200).
-    * If the email exists and is 'unsubscribed', its status shall be updated to 'active' and `subscribed_at` refreshed.
+#### FR3: Admin Reservation Management (Flask)
 
-#### FR2: Admin Authentication Module
+(Same as before — CRUD on reservations, manual room override, role validation.
+See `backend/routes/admin_reservations.py`.)
 
-* **FR2.1: Login**
-    * The system shall provide an endpoint (`POST /api/admin/login`) for an Admin User to authenticate.
-    * The system must validate the `username` and `password` (using `bcrypt.checkpw`).
-    * On success, the system must create a server-side session storing `admin_id`, `admin_username`, `admin_name`, and `admin_role`, and return the admin's `id`, `username`, `name`, and `role`.
+#### FR4: Reservation Constraint Logic (Flask)
 
-* **FR2.2: Logout**
-    * The system shall provide an endpoint (`POST /api/admin/logout`) that clears all admin-related session data.
+(Same as before — party size bounds, location guest/reservation limits, hard
+blocks, room capacity. See `backend/utils/room_assignment.py`.)
 
-* **FR2.3: Access Control**
-    * All API endpoints under the `/api/admin/` path (except `/login`) must be protected.
-    * Each protected handler checks for `admin_id` in the session and returns an HTTP 401 Unauthorized error if absent. (Role checks for 'manager' are enforced at specific soft-block override points rather than at the blueprint level.)
+#### FR5: Automatic Room Assignment Logic (Flask)
 
-#### FR3: Admin Reservation Management (CRUD)
+(Same as before — candidate retrieval, filtering, weighted-random selection.
+See `backend/utils/room_assignment.py`.)
 
-* **FR3.1: Create Reservation (Admin)**
-    * The system shall provide a protected endpoint (`POST /api/admin/reservations/create`) for admins.
-    * **FR3.1.1 (Party Size):** This endpoint shall allow a `party_size` between 1 and 30.
-    * **FR3.1.2 (Manual Room):** The endpoint shall optionally accept a `room_id`.
-    * **FR3.1.3 (Room Validation):** If a `room_id` is provided, the system must validate it against `reservation_blocks` (FR4.4) and `rooms.max_capacity` (FR4.5).
-    * **FR3.1.4 (Role Validation):** If the manually selected room is 'soft' blocked, the system must reject the request (HTTP 403) unless the authenticated user's role is 'manager'.
-    * **FR3.1.5 (Auto-Assignment):** If no `room_id` is provided, the system shall use the logic in FR5 to assign one. If the only available auto-assigned room is soft-blocked and the user is not a 'manager', the request is rejected (HTTP 403).
-    * **FR3.1.6 (Customer):** The system shall find or create the customer by `customer_email`, updating `name`/`phone` on an existing record.
-    * **FR3.1.7 (Default Status):** Admin-created reservations are saved with `status='confirmed'`.
-    * **FR3.1.8 (Auditing):** This action must be logged (see FR9.1).
+#### FR6: Admin Dashboard & Lookup Module (Flask)
 
-* **FR3.2: Read Reservations**
-    * The system shall provide a protected endpoint (`GET /api/admin/reservations`) to list reservations.
-    * It must be filterable by `location_id`, `date` (YYYY-MM-DD), and a string `search` (querying `reservation_number`, `customer.name`, and `customer.email` via case-insensitive `ILIKE`).
-    * Results are ordered by `date` descending, then `time` descending, and include eagerly loaded `customer`, `location` (`code`/`name`), and `room` (`code`/`name`) nested objects.
+(Same as before — dashboard stats, rooms lookup. See
+`backend/routes/admin_other.py` and `backend/utils/dashboard.py`.)
 
-* **FR3.3: Update Reservation Status**
-    * The system shall provide a protected endpoint (`PUT /api/admin/reservations/<id>/status`) to update only the `status` field.
-    * Valid statuses are: 'confirmed', 'cancelled', 'no-show', 'completed'.
-    * **FR3.3.1 (Auditing):** This action must be logged (see FR9.1).
+#### FR7: Admin Block Management (Flask)
 
-* **FR3.4: Update Reservation Details**
-    * The system shall provide a protected endpoint (`PUT /api/admin/reservations/<id>/details`) to update all reservation data.
-    * Required input fields: `location_id`, `date`, `time`, `party_size`, `customer_name`, `customer_email`, `status` (plus optional `duration_minutes`, `room_id`, `customer_phone`, `special_requests`).
-    * The system must re-validate all constraints (FR4) and room assignments (FR5) as if it were a new booking, but excluding its own ID from capacity calculations.
-    * **FR3.4.1 (Auditing):** This action must be logged (see FR9.1).
+(Same as before — create, read, delete blocks. See
+`backend/routes/admin_blocks.py`.)
 
-* **FR3.5: Update Reservation Room (Manual Override)**
-    * The system shall provide a protected endpoint (`PUT /api/admin/reservations/<id>/room`) to manually change the `room_id` of an existing reservation.
-    * This endpoint must validate that the new room belongs to the same `location_id` as the reservation, that it is not 'hard' blocked (FR4.4), and that it has sufficient capacity (FR4.5).
-    * **FR3.5.1 (Role Validation):** This action must reject (HTTP 403) if the new room is 'soft' blocked and the user is not a 'manager'.
-    * **FR3.5.2 (Auditing):** This action must be logged (see FR9.1), including the `soft_block_override` flag, the old and new `room_id`.
+#### FR8: Admin Customer & Subscriber Management (Flask)
 
-* **FR3.6: Delete Reservation**
-    * The system shall provide a protected endpoint (`DELETE /api/admin/reservations/<id>`) to delete a reservation.
-    * **FR3.6.1 (Auditing):** This action must be logged (see FR9.1).
+(Same as before — read/update customers, read subscribers. See
+`backend/routes/admin_customers.py`.)
 
-#### FR4: Reservation Constraint Logic (Backend)
+#### FR9: Auditing & Profile Management (Flask)
 
-The system must enforce the following rules, primarily via `utils/room_assignment.py` (`validate_reservation_constraints` and its helpers `check_location_blocks`, `calculate_location_occupancy`, `check_room_blocks`, `calculate_room_occupancy`).
+(Same as before — audit log creation, read audit log, admin profile. See
+`backend/routes/admin_profile.py` and `backend/utils/audit.py`.)
 
-* **FR4.1: Party Size Bounds**
-    * Public bookings must have `1 <= party_size <= 12`. Admin bookings must have `1 <= party_size <= 30`. The DB-level `CHECK` constraint on `reservations.party_size` enforces `> 0 AND <= 30` regardless of caller.
+#### FR10: Operational Endpoints (Flask)
 
-* **FR4.2: Location Guest Limit**
-    * The system must reject any new reservation if `(current_guests_in_slot + new_party_size) > locations.max_guests_per_slot`.
-    * `current_guests_in_slot` is the sum of `party_size` from all confirmed `reservations` that overlap with the new reservation's time window (`time < end_time` and `time + duration < start_time` is the non-overlap condition; status must be 'confirmed').
+(Same as before — health check, test endpoint. See `backend/app.py`.)
 
-* **FR4.3: Location Reservation Limit**
-    * The system must reject any new reservation if `(current_reservations_in_slot + 1) > locations.max_reservations_per_slot`.
-    * `current_reservations_in_slot` is the count of all confirmed `reservations` that overlap with the new reservation's time window.
+#### FR11: AI Concierge Agent (FastAPI)
 
-* **FR4.4: Location 'Hard' Block**
-    * The system must reject any new reservation if its time window overlaps with a `reservation_blocks` entry where `location_id` matches, `room_id` IS NULL, and `block_type` is 'hard'. Overlap is checked by: the reservation `date` is between `start_date` and `end_date`, and either (a) `start_time = end_time` (an all-day block that blocks any time on that date), or (b) `start_time < block.end_time` and `end_time > block.start_time`.
+* **FR11.1: Health Check**
+    * The agent shall provide a health endpoint (`GET /api/ai/health`) that
+      verifies Postgres connectivity, pgvector extension status, and knowledge
+      chunk count.
 
-* **FR4.5: Room 'Hard' Block**
-    * The system must reject any new reservation if its assigned room's time window overlaps with a `reservation_blocks` entry where `room_id` matches and `block_type` is 'hard' (same overlap rule as FR4.4, including the all-day `start_time = end_time` case).
+* **FR11.2: RAG Chat (Phase 1)**
+    * The agent shall provide `POST /api/ai/chat` (non-streaming) and
+      `POST /api/ai/chat/stream` (SSE streaming) for answering guest
+      questions grounded in the EFP knowledge base.
+    * The agent must retrieve top-k context chunks from pgvector using cosine
+      similarity search.
+    * The agent must enforce a scope guardrail (off-topic questions are
+      rejected without calling the LLM).
+    * The agent must perform a groundedness check (append a disclaimer if the
+      answer is not grounded in retrieved context).
 
-* **FR4.6: Room Capacity**
-    * The system must reject any new reservation if `(current_room_occupancy + new_party_size) > rooms.max_capacity` for the assigned room.
-    * `current_room_occupancy` is the sum of `party_size` from all confirmed `reservations` in that specific room that overlap with the new reservation's time window.
+* **FR11.3: Tool Calling (Phase 2)**
+    * The agent shall provide `POST /api/ai/agent` and
+      `POST /api/ai/agent/stream` for autonomous tool-calling.
+    * Three tools are defined: `get_locations`, `check_availability`,
+      `create_reservation`. Each wraps the corresponding Flask API endpoint
+      via HTTP.
+    * The agent must enforce a client-side guardrail: party size > 12 is
+      rejected before calling the Flask API (returns `requires_call: true`).
+    * The ReAct loop runs for a maximum of 3 iterations to prevent infinite
+      loops.
 
-#### FR5: Automatic Room Assignment Logic (Backend)
+* **FR11.4: LangGraph State Machine (Phase 3)**
+    * The agent shall provide `POST /api/ai/graph` and
+      `POST /api/ai/graph/stream` for the full LangGraph-powered agent.
+    * The graph has 8 nodes: memory_retrieve, triage, rag, agent, tools,
+      escalation, response, memory_store.
+    * Conditional routing: in-scope questions go to RAG; out-of-scope go to
+      response; tool calls go to tools; escalation triggers go to escalation.
+    * The escalation node emits a "our team will follow up" response for
+      party size > 12, soft-block overrides, or sentiment-detected complaints.
 
-Implemented in `utils/room_assignment.py` (`get_candidate_rooms` and `weighted_random_room_selection`), using the psycopg2 connection pool.
+* **FR11.5: Long-Term Memory (Phase 4)**
+    * The agent shall retrieve guest memories at the start of each
+      conversation (memory_retrieve_node) and inject them into the LLM
+      context.
+    * The agent shall extract facts from the conversation after each response
+      (memory_store_node) using an LLM-powered memory extractor.
+    * Memories are classified as semantic (preferences), episodic (events),
+      or procedural (how-to).
+    * Memories are stored in `guest_ai_memory` with vector embeddings for
+      semantic search.
+    * Personal questions from known guests (those with stored memories) are
+      routed to RAG even if keywords don't match the knowledge base
+      (memory-aware triage override).
 
-* **FR5.1: Candidate Retrieval**
-    * When auto-assigning a room, the system must first query all `rooms` for the `location_id` that are `is_active = true`.
+* **FR11.6: Multi-Turn Continuity**
+    * The agent shall accept a `thread_id` in the request body for multi-turn
+      conversation continuity.
+    * When a `thread_id` is provided, the LangGraph MemorySaver checkpointer
+      connects turn N to turn N+1. The rag_node appends new user messages to
+      the checkpointed message history instead of replacing it.
+    * When `thread_id` is absent, a one-shot thread_id is generated
+      (backward-compatible).
+    * The response and done frame shall include the `thread_id` used.
 
-* **FR5.2: Candidate Filtering**
-    * The system must filter the candidate list, removing any room that:
-        1.  Is 'hard' blocked (per FR4.4).
-        2.  Has insufficient remaining capacity for the party, i.e., `(max_capacity - current_room_occupancy) < party_size` (per FR4.5).
+* **FR11.7: Tracing & Evaluation (Phase 5)**
+    * The agent shall log every LLM call, tool call, graph node transition,
+      memory operation, and eval result as structured JSON lines to a trace
+      file (`traces/trace_<timestamp>.jsonl`).
+    * The agent shall include a 50-scenario eval suite covering 8 categories
+      (menu, hours, founders, locations, policy, off_topic, brand_voice,
+      reservation_flow).
+    * The eval runner shall support mock mode (no LLM needed) and real mode
+      (needs Flask + Ollama Cloud), with category filtering.
 
-* **FR5.3: Weighted-Random Selection**
-    * From the final list of candidates, the system must perform a weighted-random selection (Python `random.choices`).
-    * The `weight` for each room must be calculated as: `(available_capacity * 1000) + (100 - reservation_count)`, where `available_capacity = max_capacity - current_room_occupancy` and `reservation_count` is the number of confirmed reservations overlapping the slot in that room.
-    * This algorithm prioritizes rooms with more available capacity, using the reservation count as a tie-breaker.
-    * If no candidates remain, the assignment returns `None` and the calling handler rejects the booking.
+* **FR11.8: Identity Handoff**
+    * The agent shall accept a `guest_identifier` in the request body for
+      long-term memory. When empty, memory_retrieve and memory_store no-op.
+    * The frontend generates a stable anonymous UUID (`efp_guest_id` in
+      localStorage) and sends it with every message.
+    * The frontend generates a per-session UUID (`efp_thread_id` in
+      localStorage) and sends it with every message.
 
-#### FR6: Admin Dashboard & Lookup Module
+#### FR12: Frontend Concierge Chat Widget
 
-* **FR6.1: Dashboard Statistics**
-    * The system shall provide a protected endpoint (`GET /api/admin/dashboard/stats`) that accepts a `location_id` and `date` (both required).
-    * It must return a comprehensive JSON object containing:
-        1.  `location` details (via `Location.to_dict`).
-        2.  `date` (the requested date string).
-        3.  `time_slots`: the 30-minute slots for that date.
-        4.  `room_heatmap`: a list of per-room objects (each with `id`, `code`, `name`, `max_capacity`, `is_active`, and a `slots` map). Each slot entry contains `occupancy`, `reservation_count`, and `percentage` (occupancy vs. `max_capacity`).
-        5.  `location_stats`: a per-slot object detailing `total_guests`, `total_reservations`, `guests_percentage`, and `reservations_percentage` (vs. `max_guests_per_slot` / `max_reservations_per_slot`).
-        6.  `reservations`: the full list of confirmed-and-other reservations for the day (serialized via `Reservation.to_dict`).
-    * Only reservations with `status='confirmed'` contribute to heatmap occupancy and location stats.
+* **FR12.1: Chat Widget**
+    * A floating button shall appear in the bottom-right corner on all
+      guest-facing pages (never in the admin dashboard).
+    * Clicking the button opens a slide-in chat panel with message bubbles,
+      an input box, and streaming token rendering.
 
-* **FR6.2: Rooms Lookup**
-    * The system shall provide a protected endpoint (`GET /api/admin/rooms`) that requires a `location_id` query parameter and returns the list of rooms for that location ordered by `code`. Used by the admin block and reservation editors.
+* **FR12.2: Streaming**
+    * The widget shall consume SSE from `/api/ai/graph/stream` and render
+      tokens incrementally as they arrive.
+    * The SSE parser must ignore keep-alive pings and non-data lines, tolerate
+      malformed JSON, and support AbortController for cancellation.
 
-#### FR7: Admin Block Management
+* **FR12.3: Tool-Call Status**
+    * The widget shall render tool-call status badges (e.g., "Checking
+      availability...") during tool execution.
 
-* **FR7.1: Create Block**
-    * The system shall provide a protected endpoint (`POST /api/admin/blocks`) to create a `reservation_blocks` entry.
-    * Required fields: `location_id`, `start_date`, `end_date`, `start_time`, `end_time`, `block_type` (must be 'hard' or 'soft'). Optional: `room_id` (empty string is normalized to NULL for a location-wide block), `reason`. `created_by` is set to the session admin.
-    * **FR7.1.1 (Auditing):** This action must be logged (see FR9.1).
+* **FR12.4: Escalation UX**
+    * When an escalation frame arrives, the widget shall render a visually
+      distinct "our team will follow up with you" notice.
 
-* **FR7.2: Read Blocks**
-    * The system shall provide a protected endpoint (`GET /api/admin/blocks`) to list all blocks, filterable by `location_id`. Results are ordered by `start_date` then `start_time` descending, and include eager-loaded `location`, `room`, and `creator` for `location_name`, `room_name`, and `created_by_name`.
+* **FR12.5: Booking Confirmation**
+    * When a successful `create_reservation` tool result is received, the
+      widget shall render a confirmation card with reservation number, room,
+      and message.
 
-* **FR7.3: Delete Block**
-    * The system shall provide a protected endpoint (`DELETE /api/admin/blocks/<id>`) to delete a block.
-    * **FR7.3.1 (Auditing):** This action must be logged (see FR9.1).
+* **FR12.6: Graceful Degradation**
+    * On 503 or network error, the widget shall show a friendly "concierge
+      unavailable" message with a link to the Reservations page.
+    * The widget must never block page rendering or navigation.
 
-#### FR8: Admin Customer & Subscriber Management
-
-* **FR8.1: Read Customers**
-    * The system shall provide a protected endpoint (`GET /api/admin/customers`) to list all `customers` ordered by `id`.
-
-* **FR8.2: Update Customer**
-    * The system shall provide a protected endpoint (`PUT /api/admin/customers/<id>`) to update a customer's `name`, `email`, `phone`, and `newsletter_signup` status (`name` and `email` required).
-    * The system must enforce that the new `email` is not already in use by another customer (HTTP 409).
-    * **FR8.2.1 (Auditing):** This action must be logged (see FR9.1), capturing old and new values.
-
-* **FR8.3: Read Subscribers**
-    * The system shall provide a protected endpoint (`GET /api/admin/subscribers`) to list all `newsletter_subscribers` ordered by `id`.
-
-#### FR9: Auditing & Profile Management
-
-* **FR9.1: Audit Log Creation**
-    * The system must automatically create an `audit_log` entry when any of the following admin actions are successfully committed:
-        * `create_block`
-        * `delete_block`
-        * `update_customer`
-        * `update_status` (reservation)
-        * `update_details` (reservation)
-        * `delete_reservation`
-        * `manual_room_override`
-        * `create_reservation`
-    * Each entry records `admin_id`, `action`, `entity_type`, `entity_id`, and a JSON `details` payload whose shape is specific to the action.
-
-* **FR9.2: Read Audit Log**
-    * The system shall provide a protected endpoint (`GET /api/admin/audit-log`) to retrieve log entries, ordered by `created_at` descending.
-    * It accepts an optional `limit` query parameter (integer, default 50) to cap the number of returned entries. The admin's `full_name` is included as `admin_name` via eager loading.
-
-* **FR9.3: Admin Profile**
-    * The system shall provide a protected endpoint (`GET /api/admin/profile`) returning the current admin's `username`, `fullName`, and `role` (used by the frontend to verify the session is still valid).
-    * The system shall provide protected endpoints for an admin to update their own `full_name` (`PUT /api/admin/profile/name`, body `{ fullName }`; also updates the session's `admin_name`) and `password` (`PUT /api/admin/profile/password`, body `{ currentPassword, newPassword, confirmPassword }`; verifies the current password with bcrypt before updating).
-
-#### FR10: Operational Endpoints
-
-* **FR10.1: Health Check**
-    * The system shall provide a public endpoint (`GET /api/health`) that executes `SELECT 1` via SQLAlchemy and returns `{ "status": "healthy", "database": "connected" }` (HTTP 200) on success, or `unhealthy` with the error message (HTTP 500) on failure.
-
-* **FR10.2: Test Endpoint**
-    * The system shall provide a public endpoint (`GET /api/test`) returning `{ "message": "Backend is working!" }` for simple connectivity verification.
+* **FR12.7: Accessibility & Mobile**
+    * The widget shall have aria-labels on all interactive elements.
+    * Escape closes the panel. Enter sends the message. Focus moves into the
+      panel on open.
+    * On small screens the panel expands to near-fullscreen.
 
 ### 3.3 Non-Functional Requirements
 
 * **NFR1: Security**
     * All admin-level data must be accessible only by authenticated Admin Users.
-    * Admin passwords must not be stored in plaintext. They must be hashed using `bcrypt`.
-    * The system must implement role-based access control (RBAC) to differentiate 'admin' and 'manager' privileges (specifically for soft block overrides).
+    * Admin passwords must be hashed using bcrypt.
+    * Role-based access control (RBAC) for 'admin' and 'manager' roles.
+    * The AI agent cannot access admin endpoints.
+    * Secrets stay in `.env`; nothing sensitive is committed to the repo.
+    * Guest identifiers are anonymous UUIDs, never derived from personal data.
 
 * **NFR2: Usability & Accessibility**
-    * The public and admin frontends must be responsive and usable on mobile, tablet, and desktop devices.
-    * The system must provide clear feedback to the user for all actions (e.g., success messages, validation errors) via toasts.
+    * The public and admin frontends must be responsive on mobile, tablet, and desktop.
+    * Clear feedback via toasts (frontend) and SSE streaming (AI agent).
+    * The chat widget is accessible (aria-labels, keyboard navigation, focus management).
 
 * **NFR3: Reliability & Data Integrity**
-    * The system must prevent the creation of reservations that violate defined constraints (capacity, blocks).
-    * All database operations that involve multiple steps (e.g., creating a customer and then a reservation) must use transactions that are rolled back on failure.
-    * Foreign key constraints (e.g., `ON DELETE CASCADE`) must be used to ensure data integrity when parent records (like `locations`) are deleted.
+    * The system must prevent reservations that violate constraints.
+    * Multi-step database operations use transactions with rollback on failure.
+    * Foreign key constraints ensure data integrity.
+    * The AI agent degrades gracefully on LLM provider outage (503 response).
+    * The AI agent enforces a max-iteration limit (3) to prevent infinite loops.
+    * 112 backend agent tests + 64 frontend tests act as a regression net.
 
 * **NFR4: Performance**
-    * Database indexes must be applied to all foreign keys and frequently queried columns (e.g., `reservations.date`, `reservations.time`) to ensure fast availability lookups.
-    * The admin dashboard statistics (FR6.1) must be generated efficiently to avoid long load times.
+    * Database indexes on all foreign keys and frequently queried columns.
+    * HNSW indexes on pgvector columns for fast similarity search.
+    * Local Ollama embeddings (no network latency for embedding generation).
+    * SSE streaming for human-sounding response delivery.
 
 * **NFR5: Testability**
-    * The backend must include unit tests for pure logic functions (`utils/time_utils.py`, `utils/room_assignment.py`) and integration tests for all route blueprints (public, auth, admin CRUD, blocks, audit, dashboard, profile).
-    * The frontend must include unit tests for the API service layer (`services/api.js`) and component tests for key UI components (e.g., `AdminLogin`, `Dashboard`).
-    * Tests must be runnable without external dependencies (no Postgres required for the backend suite; no running backend required for the frontend suite).
+    * Backend tests: pytest (unit + integration) runnable without Postgres.
+    * AI agent tests: 112 tests in mock mode (no LLM or network required).
+    * AI agent eval suite: 50 scenarios with automated assertions.
+    * Frontend tests: Vitest + @testing-library/react (64 tests).
+    * Tracing: structured JSON-line traces for every agent interaction.

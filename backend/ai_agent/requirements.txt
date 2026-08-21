@@ -1,0 +1,25 @@
+# AI Agent Service - Project Sanctuary
+# Isolated dependencies for the FastAPI-based LangGraph agent service.
+# Kept separate from the main Flask app's requirements.txt to avoid
+# destabilizing the transactional reservation system with AI stack churn.
+#
+# NOTE: Pins target Python 3.14 (prebuilt wheels available).
+
+# --- Agent / LLM orchestration ---
+langgraph>=1.2.11
+langchain-ollama>=1.1.0
+langchain-text-splitters>=1.1.2
+
+# --- Service runtime ---
+fastapi>=0.141.1
+uvicorn[standard]>=0.52.4
+sse-starlette>=3.4.8
+pydantic>=2.13.4
+
+# --- Database (independent engine; same Postgres DB as Flask app) ---
+SQLAlchemy>=2.0.52
+psycopg2-binary>=2.9.12
+
+# --- Config / env ---
+python-dotenv>=1.2.3
+requests>=2.34.2

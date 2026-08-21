@@ -1,5 +1,12 @@
 # **Deployment Guide using Amazon Linux 2023**
 
+> **DISCLAIMER: This guide is currently outdated and unusable.**
+> It was written before the AI Agent (FastAPI on port 8000), pgvector,
+> and Ollama integration were added. The deployment steps do not cover
+> the AI agent service, the pgvector extension, or the separate venv.
+> This guide will be updated in the future to reflect the current
+> three-service architecture (Flask + FastAPI agent + React frontend).
+
 ## Disclaimer
 
 * This project is intended for **educational, testing, and experimentation purposes only**.
