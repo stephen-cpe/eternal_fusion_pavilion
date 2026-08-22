@@ -30,25 +30,25 @@ function ChangeNameModal({ isOpen, onClose, currentName, onSuccess }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+      <div className="bg-card rounded-lg shadow-lg p-6 w-full max-w-md">
         <h2 className="text-xl font-bold mb-4">Change Your Name</h2>
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label htmlFor="fullName" className="block text-sm font-medium text-gray-700">Full Name</label>
+            <label htmlFor="fullName" className="block text-sm font-medium text-foreground">Full Name</label>
             <input
               type="text"
               id="fullName"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              className="mt-1 block w-full px-3 py-2 border border-input rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary bg-background"
               required
             />
           </div>
           <div className="flex justify-end space-x-4">
-            <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300">
+            <button type="button" onClick={onClose} className="px-4 py-2 bg-muted rounded-md hover:opacity-90 transition-colors">
               Cancel
             </button>
-            <button type="submit" disabled={isLoading} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">
+            <button type="submit" disabled={isLoading} className="px-4 py-2 bg-deep-blue text-white rounded-md hover:bg-darker-blue disabled:opacity-50 transition-colors">
               {isLoading ? 'Saving...' : 'Save Changes'}
             </button>
           </div>

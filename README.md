@@ -318,10 +318,7 @@ python -m pytest tests/
 $env:AI_MOCK="true"
 python -m pytest tests/
 ```
-All 96 tests pass in mock mode (no LLM or network required).
-
-Note: The AI agent test count is 112 when including the thread_id and
-thread continuity tests added during the frontend integration phase.
+All 124 tests pass in mock mode (no LLM or network required).
 
 ### AI Agent Eval Suite (from `backend/ai_agent/` with venv activated)
 ```bash
@@ -359,7 +356,7 @@ eternal_fusion_pavilion/
 │       ├── chat_service.py      # Phase 1: RAG chat orchestration
 │       ├── agent_service.py     # Phase 2: ReAct loop with tool calling
 │       ├── graph_service.py     # Phase 3+4: LangGraph wrapper
-│       ├── graph/               # LangGraph StateGraph (8 nodes)
+│       ├── graph/               # LangGraph StateGraph (9 nodes)
 │       ├── memory/              # Long-term memory (store + extractor)
 │       ├── tools/               # Flask API tool wrappers
 │       ├── rag/                 # RAG pipeline (embeddings, pgvector, retriever)
@@ -367,7 +364,7 @@ eternal_fusion_pavilion/
 │       ├── knowledge/           # 35 knowledge documents (JSONL)
 │       ├── evals/               # 50-scenario eval suite
 │       ├── tracing.py           # Structured JSON-line tracer
-│       └── tests/               # 96 tests across 5 phases
+│       └── tests/               # 124 tests across 5 phases + thread continuity + checkpointer + summarization
 ├── frontend/                   # React frontend (port 3000)
 │   └── src/
 │       ├── pages/               # Home, Menu, About, Reservations, Gallery, Admin
@@ -394,7 +391,7 @@ eternal_fusion_pavilion/
 | Streaming | Server-Sent Events via `sse-starlette` |
 | Database | PostgreSQL 18 + pgvector 0.8.6 (independent SQLAlchemy engine) |
 | Tracing | Lightweight local JSON-line tracer (no external dependency) |
-| Tests | pytest (112 tests across 5 phases + thread continuity) |
+| Tests | pytest (124 tests across 5 phases + thread continuity + checkpointer + summarization) |
 
 ---
 
@@ -415,7 +412,7 @@ admin dashboard). It provides:
 - Accessibility (aria-label, Escape to close, Enter to send, focus management)
 - Mobile-responsive (panel expands to near-fullscreen on small screens)
 
-Frontend tests: 64 tests pass (sseParser, ai_api, ConciergeChat, existing).
+Frontend tests: 66 tests pass (sseParser, ai_api, ConciergeChat, existing).
 
 ---
 
@@ -424,13 +421,6 @@ Frontend tests: 64 tests pass (sseParser, ai_api, ConciergeChat, existing).
 - **Production deployment**: Nginx routing `/api/ai/*` to port 8000
   alongside `/api/*` to port 5000; a systemd unit for the agent service;
   AWS deployment guide updates.
-- **Hard HITL interrupt**: LangGraph `interrupt()` + a resume endpoint for
-  true human-in-the-loop booking confirmation (currently prompt-enforced).
-- **Postgres-backed checkpointer**: Replace the in-memory `MemorySaver`
-  with a Postgres-backed checkpointer using the existing `chat_threads`
-  table (survives agent restarts, shared across workers).
 - **Token-streaming graph endpoint**: Enhance `/api/ai/graph/stream` to
   stream the LLM's answer token-by-token instead of a single answer frame.
 - **"Forget me" action**: Allow guests to clear their stored memories.
-- **Conversation windowing/summarization**: Prevent unbounded message
-  history growth in long conversations.

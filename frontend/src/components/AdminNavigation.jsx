@@ -64,11 +64,6 @@ function AdminNavigation() {
     { name: "Audit Log", path: "/admin/audit" },
   ]
 
-  const activeLinkStyle = {
-    backgroundColor: "#2c3c55", // darker-blue
-    color: "#F0EAE0", // primary-foreground
-  }
-
   return (
     <>
       <nav className="bg-deep-blue shadow-lg">
@@ -81,8 +76,13 @@ function AdminNavigation() {
                   <NavLink
                     key={item.name}
                     to={item.path}
-                    className="px-3 py-2 rounded-md text-sm font-medium text-lighter-blue hover:bg-darker-blue hover:text-white"
-                    style={({ isActive }) => (isActive ? activeLinkStyle : undefined)}
+                    className={({ isActive }) =>
+                      `px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                        isActive
+                          ? "bg-darker-blue text-primary-foreground"
+                          : "text-lighter-blue hover:bg-darker-blue hover:text-white"
+                      }`
+                    }
                   >
                     {item.name}
                   </NavLink>
@@ -93,34 +93,36 @@ function AdminNavigation() {
             <div className="relative" ref={profileRef}>
               <button
                 onClick={() => setIsProfileOpen(!isProfileOpen)}
-                className="flex text-sm bg-gray-800 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-white"
+                aria-expanded={isProfileOpen}
+                aria-haspopup="menu"
+                className="flex text-sm bg-darker-blue rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-deep-blue focus:ring-white"
               >
                 <span className="sr-only">Open user menu</span>
                 <img className="h-12 w-12 rounded-full object-cover" src="/admin-placholder.jpeg" alt="Admin Profile" />
               </button>
               {isProfileOpen && (
-                <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none">
-                  <div className="px-4 py-2 text-sm text-gray-700 border-b">
+                <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg py-1 bg-popover ring-1 ring-black/5 focus:outline-none">
+                  <div className="px-4 py-2 text-sm text-foreground border-b border-border">
 
                     <p className="font-semibold">{profileData.fullName}</p>
-                    <p className="text-xs text-gray-500">{profileData.email}</p>
+                    <p className="text-xs text-muted-foreground">{profileData.email}</p>
                   </div>
 
                   <button
                     onClick={() => setChangeNameModalOpen(true)}
-                    className="w-full text-left block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    className="w-full text-left block px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
                   >
                     Change Name
                   </button>
                   <button
                     onClick={() => setChangePasswordModalOpen(true)}
-                    className="w-full text-left block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    className="w-full text-left block px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
                   >
                     Change Password
                   </button>
                   <button
                     onClick={handleLogout}
-                    className="w-full text-left block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    className="w-full text-left block px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
                   >
                     Log Out
                   </button>

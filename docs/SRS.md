@@ -323,8 +323,8 @@ See `backend/utils/room_assignment.py`.)
 * **FR11.4: LangGraph State Machine (Phase 3)**
     * The agent shall provide `POST /api/ai/graph` and
       `POST /api/ai/graph/stream` for the full LangGraph-powered agent.
-    * The graph has 8 nodes: memory_retrieve, triage, rag, agent, tools,
-      escalation, response, memory_store.
+    * The graph has 9 nodes: memory_retrieve, triage, rag, summarize, agent,
+      tools, escalation, response, memory_store.
     * Conditional routing: in-scope questions go to RAG; out-of-scope go to
       response; tool calls go to tools; escalation triggers go to escalation.
     * The escalation node emits a "our team will follow up" response for
@@ -347,14 +347,50 @@ See `backend/utils/room_assignment.py`.)
 * **FR11.6: Multi-Turn Continuity**
     * The agent shall accept a `thread_id` in the request body for multi-turn
       conversation continuity.
-    * When a `thread_id` is provided, the LangGraph MemorySaver checkpointer
+    * When a `thread_id` is provided, the Postgres-backed checkpointer
       connects turn N to turn N+1. The rag_node appends new user messages to
       the checkpointed message history instead of replacing it.
     * When `thread_id` is absent, a one-shot thread_id is generated
       (backward-compatible).
     * The response and done frame shall include the `thread_id` used.
 
-* **FR11.7: Tracing & Evaluation (Phase 5)**
+* **FR11.7: Postgres-Backed Checkpointer**
+    * The agent shall use `langgraph-checkpoint-postgres` (`PostgresSaver`)
+      as the checkpointer, not in-memory `MemorySaver`.
+    * Thread state shall survive agent restarts and be shared across workers.
+    * The checkpointer shall create its own tables (`checkpoints`,
+      `checkpoint_writes`) via `.setup()`.
+    * If Postgres is unavailable, the agent shall fall back to `MemorySaver`
+      and log a warning.
+
+* **FR11.8: Hard Human-in-the-Loop Interrupt**
+    * The agent shall use LangGraph's `interrupt()` to hard-gate
+      `create_reservation` behind explicit human confirmation.
+    * When the LLM requests `create_reservation`, the graph shall pause and
+      return reservation details to the frontend as an interrupt frame.
+    * The frontend shall display a confirmation card with Confirm and Cancel
+      buttons.
+    * The agent shall provide `POST /api/ai/resume` with `{thread_id,
+      confirmed}` to resume the paused graph.
+    * If the user confirms, the graph resumes and executes the reservation.
+    * If the user cancels, the graph returns a cancellation result without
+      calling the Flask API.
+
+* **FR11.9: Conversation Summarization**
+    * The agent shall include a `summarize_node` in the StateGraph that runs
+      after `rag` and before `agent`.
+    * When the message count exceeds 12, the node shall summarize the older
+      messages into a concise LLM-generated summary.
+    * The summary shall be injected into the system prompt as
+      `[Conversation Summary]`.
+    * The last 6 messages shall be kept verbatim (system prompt + recent
+      turns).
+    * The `conversation_summary` state field shall persist across turns via
+      the checkpointer.
+    * This prevents unbounded context window growth, controls latency, and
+      optimizes LLM cost.
+
+* **FR11.10: Tracing & Evaluation (Phase 5)**
     * The agent shall log every LLM call, tool call, graph node transition,
       memory operation, and eval result as structured JSON lines to a trace
       file (`traces/trace_<timestamp>.jsonl`).
@@ -364,7 +400,7 @@ See `backend/utils/room_assignment.py`.)
     * The eval runner shall support mock mode (no LLM needed) and real mode
       (needs Flask + Ollama Cloud), with category filtering.
 
-* **FR11.8: Identity Handoff**
+* **FR11.11: Identity Handoff**
     * The agent shall accept a `guest_identifier` in the request body for
       long-term memory. When empty, memory_retrieve and memory_store no-op.
     * The frontend generates a stable anonymous UUID (`efp_guest_id` in
@@ -398,6 +434,13 @@ See `backend/utils/room_assignment.py`.)
     * When a successful `create_reservation` tool result is received, the
       widget shall render a confirmation card with reservation number, room,
       and message.
+    * When the graph is interrupted for HITL booking confirmation, the widget
+      shall render a "Booking Confirmation Required" card with the reservation
+      details and Confirm/Cancel buttons.
+    * When the user confirms, the widget shall call `POST /api/ai/resume`
+      with `{thread_id, confirmed: true}`.
+    * When the user cancels, the widget shall call `POST /api/ai/resume`
+      with `{thread_id, confirmed: false}`.
 
 * **FR12.6: Graceful Degradation**
     * On 503 or network error, the widget shall show a friendly "concierge
@@ -431,7 +474,7 @@ See `backend/utils/room_assignment.py`.)
     * Foreign key constraints ensure data integrity.
     * The AI agent degrades gracefully on LLM provider outage (503 response).
     * The AI agent enforces a max-iteration limit (3) to prevent infinite loops.
-    * 112 backend agent tests + 64 frontend tests act as a regression net.
+    * 124 backend agent tests + 66 frontend tests act as a regression net.
 
 * **NFR4: Performance**
     * Database indexes on all foreign keys and frequently queried columns.
@@ -441,7 +484,7 @@ See `backend/utils/room_assignment.py`.)
 
 * **NFR5: Testability**
     * Backend tests: pytest (unit + integration) runnable without Postgres.
-    * AI agent tests: 112 tests in mock mode (no LLM or network required).
+    * AI agent tests: 124 tests in mock mode (no LLM or network required).
     * AI agent eval suite: 50 scenarios with automated assertions.
-    * Frontend tests: Vitest + @testing-library/react (64 tests).
+    * Frontend tests: Vitest + @testing-library/react (66 tests).
     * Tracing: structured JSON-line traces for every agent interaction.

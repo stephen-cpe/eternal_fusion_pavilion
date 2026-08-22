@@ -38,26 +38,26 @@ function ChangePasswordModal({ isOpen, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+      <div className="bg-card rounded-lg shadow-lg p-6 w-full max-w-md">
         <h2 className="text-xl font-bold mb-4">Change Password</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Current Password</label>
-            <input type="password" name="currentPassword" value={passwords.currentPassword} onChange={handleChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" required />
+            <label className="block text-sm font-medium text-foreground">Current Password</label>
+            <input type="password" name="currentPassword" value={passwords.currentPassword} onChange={handleChange} className="mt-1 block w-full px-3 py-2 border border-input rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary bg-background" required />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">New Password</label>
-            <input type="password" name="newPassword" value={passwords.newPassword} onChange={handleChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" required />
+            <label className="block text-sm font-medium text-foreground">New Password</label>
+            <input type="password" name="newPassword" value={passwords.newPassword} onChange={handleChange} className="mt-1 block w-full px-3 py-2 border border-input rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary bg-background" required />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Confirm New Password</label>
-            <input type="password" name="confirmPassword" value={passwords.confirmPassword} onChange={handleChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" required />
+            <label className="block text-sm font-medium text-foreground">Confirm New Password</label>
+            <input type="password" name="confirmPassword" value={passwords.confirmPassword} onChange={handleChange} className="mt-1 block w-full px-3 py-2 border border-input rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary bg-background" required />
           </div>
           <div className="flex justify-end space-x-4 pt-4">
-            <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300">
+            <button type="button" onClick={onClose} className="px-4 py-2 bg-muted rounded-md hover:opacity-90 transition-colors">
               Cancel
             </button>
-            <button type="submit" disabled={isLoading} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">
+            <button type="submit" disabled={isLoading} className="px-4 py-2 bg-deep-blue text-white rounded-md hover:bg-darker-blue disabled:opacity-50 transition-colors">
               {isLoading ? 'Saving...' : 'Update Password'}
             </button>
           </div>

@@ -17,7 +17,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
-import { streamChat, getGuestId, newThreadId, clearThreadId } from "../services/ai_api";
+import { streamChat, getGuestId, getThreadId, newThreadId, clearThreadId, streamResume } from "../services/ai_api";
 
 // Tool name → human-readable status label.
 const TOOL_LABELS = {
@@ -33,18 +33,33 @@ function toolStatusLabel(name) {
 
 export default function ConciergeChat() {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState([]); // {role, text, type?, data?}
+  const [messages, setMessages] = useState(() => {
+    // Restore chat history from sessionStorage on mount.
+    try {
+      const saved = sessionStorage.getItem("efp_chat_messages");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
-  const [toolStatus, setToolStatus] = useState(null); // current tool label or null
+  const [toolStatus, setToolStatus] = useState(null);
   const [error, setError] = useState(null);
   const [hasError, setHasError] = useState(false);
-  const [threadStarted, setThreadStarted] = useState(false);
+  const [threadStarted, setThreadStarted] = useState(() => !!getThreadId());
+  const [pendingConfirmation, setPendingConfirmation] = useState(null);
+  const [isResuming, setIsResuming] = useState(false);
 
   const abortRef = useRef(null);
   const inputRef = useRef(null);
   const scrollRef = useRef(null);
+
+  // Persist messages to sessionStorage whenever they change.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("efp_chat_messages", JSON.stringify(messages));
+    } catch { /* sessionStorage may be full or unavailable */ }
+  }, [messages]);
 
   // Auto-scroll to bottom on new messages / streaming text.
   useEffect(() => {
@@ -81,11 +96,12 @@ export default function ConciergeChat() {
 
   const handleSend = useCallback(async () => {
     const question = input.trim();
-    if (!question || isStreaming || hasError) return;
+    if (!question || isStreaming || hasError || pendingConfirmation) return;
 
     // Ensure we have a thread_id for this chat session.
-    if (!threadStarted) {
-      newThreadId();
+    let currentThreadId = getThreadId();
+    if (!threadStarted || !currentThreadId) {
+      currentThreadId = newThreadId();
       setThreadStarted(true);
     }
 
@@ -109,7 +125,6 @@ export default function ConciergeChat() {
         question,
         {
           onNode: (node) => {
-            // Show thinking indicator during node transitions.
             if (node === "rag") setToolStatus("Searching our knowledge...");
             else if (node === "agent") setToolStatus(null);
             else if (node === "memory_retrieve") setToolStatus("Recalling your preferences...");
@@ -128,43 +143,29 @@ export default function ConciergeChat() {
           onEscalation: (reason) => {
             setMessages((prev) => [
               ...prev,
-              {
-                role: "assistant",
-                type: "escalation",
-                text: reason,
-              },
+              { role: "assistant", type: "escalation", text: reason },
             ]);
           },
           onDone: (data) => {
-            // If we got tokens, finalize the assistant message.
-            if (fullAnswer) {
-              setMessages((prev) => [
-                ...prev,
-                { role: "assistant", text: fullAnswer },
-              ]);
-            }
-            // Check for booking confirmation in tool results.
-            for (const tr of toolResults) {
-              if (tr.name === "create_reservation" && tr.result?.success) {
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    role: "assistant",
-                    type: "confirmation",
-                    data: tr.result,
-                  },
-                ]);
+            if (data.interrupted && data.interrupt_data) {
+              // HITL interrupt — show confirmation card.
+              setPendingConfirmation({
+                threadId: data.thread_id,
+                details: data.interrupt_data.details || {},
+                message: data.interrupt_data.message || "Please confirm your booking.",
+              });
+            } else {
+              // Normal completion — finalize the assistant message.
+              if (fullAnswer) {
+                setMessages((prev) => [...prev, { role: "assistant", text: fullAnswer }]);
               }
-              // Check for escalation via requires_call.
-              if (tr.result?.requires_call) {
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    role: "assistant",
-                    type: "escalation",
-                    text: tr.result.error,
-                  },
-                ]);
+              for (const tr of toolResults) {
+                if (tr.name === "create_reservation" && tr.result?.success) {
+                  setMessages((prev) => [...prev, { role: "assistant", type: "confirmation", data: tr.result }]);
+                }
+                if (tr.result?.requires_call) {
+                  setMessages((prev) => [...prev, { role: "assistant", type: "escalation", text: tr.result.error }]);
+                }
               }
             }
             setStreamingText("");
@@ -185,7 +186,83 @@ export default function ConciergeChat() {
       setToolStatus(null);
       abortRef.current = null;
     }
-  }, [input, isStreaming, hasError, threadStarted]);
+  }, [input, isStreaming, hasError, threadStarted, pendingConfirmation]);
+
+  const handleConfirmBooking = useCallback(async () => {
+    if (!pendingConfirmation) return;
+    setIsResuming(true);
+    setStreamingText("");
+    setToolStatus("Confirming your reservation...");
+    let fullAnswer = "";
+    let toolResults = [];
+    try {
+      await streamResume(
+        pendingConfirmation.threadId,
+        true,
+        {
+          onNode: () => {},
+          onToken: (token) => {
+            fullAnswer += token;
+            setStreamingText(fullAnswer);
+          },
+          onToolCall: (call) => {
+            setToolStatus(toolStatusLabel(call.name));
+          },
+          onToolResult: (result) => {
+            toolResults.push(result);
+            setToolStatus(null);
+          },
+          onEscalation: (reason) => {
+            setMessages((prev) => [...prev, { role: "assistant", type: "escalation", text: reason }]);
+          },
+          onDone: () => {
+            if (fullAnswer) {
+              setMessages((prev) => [...prev, { role: "assistant", text: fullAnswer }]);
+            }
+            for (const tr of toolResults) {
+              if (tr.name === "create_reservation" && tr.result?.success) {
+                setMessages((prev) => [...prev, { role: "assistant", type: "confirmation", data: tr.result }]);
+              }
+              if (tr.result?.requires_call) {
+                setMessages((prev) => [...prev, { role: "assistant", type: "escalation", text: tr.result.error }]);
+              }
+            }
+            setStreamingText("");
+            setToolStatus(null);
+          },
+          onError: (errMsg) => {
+            setMessages((prev) => [...prev, { role: "assistant", text: errMsg }]);
+          },
+        },
+      );
+    } catch {
+      setMessages((prev) => [...prev, { role: "assistant", text: "I couldn't complete the booking. Please try again." }]);
+    } finally {
+      setPendingConfirmation(null);
+      setIsResuming(false);
+      setStreamingText("");
+      setToolStatus(null);
+    }
+  }, [pendingConfirmation]);
+
+  const handleCancelBooking = useCallback(async () => {
+    if (!pendingConfirmation) return;
+    setIsResuming(true);
+    try {
+      await streamResume(pendingConfirmation.threadId, false, {
+        onNode: () => {},
+        onToken: () => {},
+        onDone: () => {},
+        onError: () => {},
+      });
+      setMessages((prev) => [...prev, { role: "assistant", text: "Your reservation request has been cancelled. Let me know if you'd like to try a different time or location." }]);
+    } catch {
+      setMessages((prev) => [...prev, { role: "assistant", text: "The booking was cancelled." }]);
+    } finally {
+      setPendingConfirmation(null);
+      setIsResuming(false);
+    }
+  }, [pendingConfirmation]);
 
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -201,6 +278,7 @@ export default function ConciergeChat() {
     setStreamingText("");
     setThreadStarted(false);
     clearThreadId();
+    try { sessionStorage.removeItem("efp_chat_messages"); } catch { /* ignore */ }
   };
 
   const toggleOpen = () => {
@@ -243,7 +321,7 @@ export default function ConciergeChat() {
             {/* Header */}
             <div className="bg-icon-blue text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
               <div>
-                <h3 className="font-semibold text-sm">EFP Concierge</h3>
+                <h3 className="font-semibold text-sm text-white">EFP Concierge</h3>
                 <p className="text-xs text-white/80">Your culinary sanctuary guide</p>
               </div>
               <button
@@ -282,6 +360,32 @@ export default function ConciergeChat() {
               {streamingText && (
                 <div className="bg-background rounded-lg p-3 text-sm text-foreground shadow-sm border border-border max-w-[85%]">
                   {streamingText}
+                </div>
+              )}
+
+              {/* HITL booking confirmation card */}
+              {pendingConfirmation && (
+                <div className="bg-golden-brown/10 border border-golden-brown/40 rounded-lg p-3 text-sm max-w-[85%]">
+                  <p className="font-semibold text-golden-brown mb-2">Booking Confirmation Required</p>
+                  <p className="text-foreground whitespace-pre-wrap mb-3">{pendingConfirmation.message}</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleConfirmBooking}
+                      disabled={isResuming}
+                      aria-label="Confirm booking"
+                      className="btn text-xs px-3 py-1.5"
+                    >
+                      {isResuming ? "Processing..." : "Confirm Booking"}
+                    </button>
+                    <button
+                      onClick={handleCancelBooking}
+                      disabled={isResuming}
+                      aria-label="Cancel booking"
+                      className="btn-outline text-xs px-3 py-1.5"
+                    >
+                      {isResuming ? "..." : "Cancel"}
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -381,12 +485,12 @@ function MessageBubble({ msg }) {
     const d = msg.data;
     return (
       <div className="flex justify-start">
-        <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm max-w-[85%]">
+        <div className="bg-success-muted border border-success/30 rounded-lg p-3 text-sm max-w-[85%]">
           <div className="flex items-center gap-2 mb-2">
-            <svg className="w-5 h-5 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="w-5 h-5 text-success flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <p className="font-semibold text-green-800">Reservation Confirmed</p>
+            <p className="font-semibold text-success-muted-foreground">Reservation Confirmed</p>
           </div>
           {d.reservation_number && (
             <p className="text-xs text-muted-foreground mb-1">

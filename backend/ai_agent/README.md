@@ -57,7 +57,7 @@ the same Postgres database as the Flask app.
 | Streaming | Server-Sent Events via `sse-starlette` |
 | Database | PostgreSQL 18 + pgvector 0.8.6 (independent SQLAlchemy engine) |
 | Tracing | Lightweight local JSON-line tracer (no external dependency) |
-| Tests | pytest (96 tests across 5 phases) |
+| Tests | pytest (124 tests across 5 phases + thread continuity + checkpointer + summarization) |
 
 ## Prerequisites
 
@@ -123,6 +123,8 @@ Expected response:
 | POST | `/api/ai/agent/stream` | SSE streaming agent with tool calling (Phase 2) |
 | POST | `/api/ai/graph` | Non-streaming LangGraph agent (Phase 3 + 4) |
 | POST | `/api/ai/graph/stream` | SSE streaming LangGraph agent (Phase 3 + 4) |
+| POST | `/api/ai/resume` | Resume a paused graph after HITL booking confirmation |
+| POST | `/api/ai/resume/stream` | Resume a paused graph via SSE streaming (primary frontend path) |
 
 All POST endpoints accept JSON: `{"question": "...", "guest_identifier": "..."}`
 
@@ -190,7 +192,7 @@ $env:AI_MOCK="true"
 python -m pytest tests/ -v
 ```
 
-All 96 tests pass in mock mode (no LLM or network required).
+All 124 tests pass in mock mode (no LLM or network required).
 
 ## File layout
 
@@ -220,7 +222,7 @@ backend/ai_agent/
 ├── tools/
 │   └── reservation_tools.py  # 3 tools wrapping Flask API + JSON schema defs
 ├── graph/
-│   └── state_machine.py       # LangGraph StateGraph: 8 nodes, conditional edges
+│   └── state_machine.py       # LangGraph StateGraph: 9 nodes, conditional edges, Postgres checkpointer
 ├── memory/
 │   ├── memory_store.py        # CRUD for guest_ai_memory (store, get, search, delete)
 │   └── memory_extractor.py   # LLM-powered fact extraction from transcripts
@@ -244,25 +246,32 @@ backend/ai_agent/
 ## LangGraph flow
 
 ```
-START -> memory_retrieve -> triage -> [in_scope?] -> rag -> agent
-                                                   |
-                                     [tool_calls?] -> tools -> agent (loop, max 3)
-                                                   |
-                                     [escalation?] -> escalation -> response
-                                                   |
-                                     [answer] -> response -> memory_store -> END
+START -> memory_retrieve -> triage -> [in_scope?] -> rag -> summarize -> agent
+                                                                |
+                                                  [tool_calls?] -> tools -> agent (loop, max 3)
+                                                                |
+                                                  [escalation?] -> escalation -> response
+                                                                |
+                                                  [answer] -> response -> memory_store -> END
 ```
 
 - **memory_retrieve**: fetches guest memories from `guest_ai_memory`, injects
-  into context (Phase 4: long-term memory).
+  into context (Phase 4: long-term memory). Resets per-turn output fields.
 - **triage**: scope check via keyword overlap against the knowledge base.
   Personal questions from known guests are routed to RAG even if keywords
   don't match (memory-aware override).
 - **rag**: retrieves top-k context from pgvector, injects guest memories.
   On continuation turns (same `thread_id`), appends the new user message to
-  the checkpointed conversation history instead of replacing it.
+  the checkpointed conversation history instead of replacing it. Injects
+  the current date so the LLM uses the correct year.
+- **summarize**: when the message count exceeds 12, compresses older
+  messages into a concise LLM-generated summary injected into the system
+  prompt. Keeps the last 6 messages verbatim. Prevents unbounded context
+  window growth.
 - **agent**: calls LLM with tools; decides next step (tool call or answer).
-- **tools**: executes tool calls via Flask API HTTP wrappers.
+- **tools**: executes tool calls via Flask API HTTP wrappers. Uses
+  LangGraph `interrupt()` to hard-gate `create_reservation` behind explicit
+  human confirmation (HITL). The graph pauses and resumes via `/api/ai/resume`.
 - **escalation**: HITL interrupt for > 12 party size, block overrides, etc.
 - **response**: formats the final answer.
 - **memory_store**: extracts facts from the conversation via LLM and stores
@@ -282,14 +291,13 @@ agent treats each request as a fresh conversation (backward-compatible).
 
 ## Known limitations
 
-### Booking confirmation is prompt-enforced, not hard-gated
+### Booking confirmation uses a hard HITL interrupt
 
-The system prompt instructs the LLM to confirm reservation details with
-the guest before calling `create_reservation`, but there is no
-client-side gate or LangGraph `interrupt()` that enforces this. The agent
-may execute a booking based on the LLM's judgment after a confirmation
-exchange. A hard human-in-the-loop interrupt (LangGraph `interrupt()` +
-a resume endpoint) is planned for a future phase.
+The agent uses LangGraph's `interrupt()` to pause the graph before
+executing `create_reservation`. The frontend receives a confirmation card
+with the reservation details and Confirm/Cancel buttons. The graph resumes
+via `POST /api/ai/resume` only after the user explicitly confirms. This
+is a true human-in-the-loop gate, not a prompt-enforced request.
 
 ### Graph endpoint does not token-stream
 
@@ -300,14 +308,6 @@ updates, not token-level. The Phase 1 `/api/ai/chat/stream` endpoint does
 real token streaming. Enhancing the graph endpoint to stream tokens
 incrementally is future work (requires forwarding the LLM's token stream
 through the graph via custom event handlers).
-
-### MemorySaver is in-memory and per-process
-
-The LangGraph `MemorySaver` checkpointer stores thread state in the
-agent process's memory. Thread state is lost on agent restart and is not
-shared across multiple workers. For production deployment, a
-Postgres-backed checkpointer should be used (the `chat_threads` table
-already exists for this purpose).
 
 ### "Forget me" is not implemented
 

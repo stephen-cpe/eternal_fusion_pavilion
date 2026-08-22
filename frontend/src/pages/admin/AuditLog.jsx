@@ -8,29 +8,29 @@ import { adminService } from "../../services/api"
 const SkeletonRow = () => (
   <tr>
     <td className="px-6 py-4">
-      <div className="h-4 bg-gray-200 rounded w-28 animate-pulse"></div>
+      <div className="h-4 bg-muted rounded w-28 animate-pulse"></div>
     </td>
     <td className="px-6 py-4">
-      <div className="h-4 bg-gray-200 rounded w-32 animate-pulse"></div>
+      <div className="h-4 bg-muted rounded w-32 animate-pulse"></div>
     </td>
     <td className="px-6 py-4">
-      <div className="h-4 bg-gray-200 rounded w-24 animate-pulse"></div>
+      <div className="h-4 bg-muted rounded w-24 animate-pulse"></div>
     </td>
     <td className="px-6 py-4">
-      <div className="h-4 bg-gray-200 rounded w-20 animate-pulse"></div>
+      <div className="h-4 bg-muted rounded w-20 animate-pulse"></div>
     </td>
     <td className="px-6 py-4">
-      <div className="h-4 bg-gray-200 rounded w-48 animate-pulse"></div>
+      <div className="h-4 bg-muted rounded w-48 animate-pulse"></div>
     </td>
   </tr>
 )
 
 // Error and refetch component
 const LoadError = ({ onRetry }) => (
-  <div className="text-center py-10 px-6 bg-red-50 border border-red-200 rounded-lg">
-    <h3 className="text-lg font-semibold text-red-700">Failed to load audit log.</h3>
-    <p className="text-red-600 mb-4">An error occurred while fetching data.</p>
-    <button onClick={onRetry} className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors">
+  <div className="text-center py-10 px-6 bg-destructive-muted border border-destructive/30 rounded-lg">
+    <h3 className="text-lg font-semibold text-destructive-muted-foreground">Failed to load audit log.</h3>
+    <p className="text-destructive-muted-foreground mb-4">An error occurred while fetching data.</p>
+    <button onClick={onRetry} className="bg-destructive text-destructive-foreground px-4 py-2 rounded-md hover:opacity-90 transition-colors">
       Retry?
     </button>
   </div>
@@ -55,7 +55,7 @@ function AuditLog() {
     // Special formatting for soft block overrides
     if (details.action === "manual_room_override" && details.soft_block_override) {
       return (
-        <span className="font-medium text-amber-700">
+        <span className="font-medium text-warning-muted-foreground">
           Soft block overridden. Moved from room {details.old_room_id} to {details.new_room_id}.
         </span>
       )

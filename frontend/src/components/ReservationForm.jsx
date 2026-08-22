@@ -55,11 +55,11 @@ const SlotAvailabilityChecker = ({ locationId, date, time }) => {
   return (
     <p className="text-sm mt-2 h-5">
       {availability.available ? (
-        <span className="text-green-600 font-bold">
+        <span className="text-success font-bold">
           {availability.slotsLeft} reservation slots available ({availability.guestsAvailable} guest capacity)
         </span>
       ) : (
-        <span className="text-red-600 font-bold">
+        <span className="text-destructive font-bold">
           {availability.error ? "Could not check availability." : "No availability for this time slot."}
         </span>
       )}
@@ -198,8 +198,8 @@ function ReservationForm() {
       </p>
 
       {showLargePartyBanner && (
-        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-          <p className="text-amber-800 text-sm">
+        <div className="mb-6 p-4 bg-warning-muted border border-warning/30 rounded-lg">
+          <p className="text-warning-muted-foreground text-sm">
             <strong>Large Party Notice:</strong> For special requests, dietary restrictions, or large party reservations
             (more than 12 guests), please call us directly.
           </p>
@@ -353,8 +353,8 @@ function ReservationForm() {
           <div
             className={`mt-6 p-4 rounded-lg text-center text-lg font-medium ${
               messageType === "success"
-                ? "bg-green-100 text-green-800 border border-green-200"
-                : "bg-red-100 text-red-800 border border-red-200"
+                ? "bg-success-muted text-success-muted-foreground border border-success/30"
+                : "bg-destructive-muted text-destructive-muted-foreground border border-destructive/30"
             }`}
           >
             {message}

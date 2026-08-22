@@ -8,10 +8,10 @@ import { useQuery } from "@tanstack/react-query"
 
 const RoomHeatmap = ({ roomData, timeSlots }) => {
   const getOccupancyColor = (percentage) => {
-    if (percentage === 0) return "bg-gray-100"
-    if (percentage < 50) return "bg-green-100 text-green-800"
-    if (percentage < 80) return "bg-yellow-100 text-yellow-800"
-    return "bg-red-100 text-red-800"
+    if (percentage === 0) return "bg-muted text-muted-foreground"
+    if (percentage < 50) return "bg-success-muted text-success-muted-foreground"
+    if (percentage < 80) return "bg-warning-muted text-warning-muted-foreground"
+    return "bg-destructive-muted text-destructive-muted-foreground"
   }
 
   return (
@@ -148,7 +148,7 @@ function Dashboard() {
       {dashboardQuery.isLoading ? (
         <div className="text-center py-8">Loading dashboard...</div>
       ) : dashboardQuery.isError ? (
-        <div className="text-center py-8 text-red-600">Failed to load dashboard data</div>
+        <div className="text-center py-8 text-destructive">Failed to load dashboard data</div>
       ) : dashboardData ? (
         <>
           {/* Location-wide stats for current view */}

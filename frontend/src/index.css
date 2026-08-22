@@ -28,8 +28,8 @@
 
   --popover: oklch(98% 0.01 100);
 
-  /* Primary colors - using lighter version of #384C6B */
-  --primary: oklch(73% 0.06 254.3);
+  /* Primary color — brand navy #384C6B (darkened for strong primary affordance) */
+  --primary: oklch(40% 0.08 254.3);
 
   --primary-foreground: oklch(98% 0.01 100);
 
@@ -56,18 +56,38 @@
   --accent-foreground: oklch(29.1% 0.06 254.3);
 
   /* Destructive colors */
-  --destructive: oklch(55% 0.25 27);
-
+  --destructive: oklch(58% 0.18 25);
   --destructive-foreground: oklch(98% 0.01 100);
+  --destructive-muted: oklch(94% 0.03 25);
+  --destructive-muted-foreground: oklch(40% 0.13 25);
+
+  /* Success colors — brand-harmonized muted sage */
+  --success: oklch(52% 0.10 152);
+  --success-foreground: oklch(98% 0.01 100);
+  --success-muted: oklch(94% 0.03 152);
+  --success-muted-foreground: oklch(38% 0.07 152);
+
+  /* Warning colors — brand-harmonized warm amber */
+  --warning: oklch(70% 0.13 75);
+  --warning-foreground: oklch(20% 0.04 75);
+  --warning-muted: oklch(94% 0.05 75);
+  --warning-muted-foreground: oklch(40% 0.09 75);
 
   /* Border and input colors - using darker shade of #384C6B */
   --border: oklch(29.1% 0.06 254.3);
-
   --input: oklch(29.1% 0.06 254.3);
-
   --ring: oklch(73% 0.06 254.3 / 0.5);
-
   --radius: 0.75rem;
+
+  /* Custom brand colors — defined in :root so both var(--golden-brown)
+     and the Tailwind utility bg-golden-brown resolve to the same value. */
+  --deep-blue: #384c6b;
+  --darker-blue: #2c3c55;
+  --lighter-blue: #9ba5b5;
+  --golden-brown: #996515;
+  --footer-bg: #384c6b;
+  --icon-blue: #124189;
+  --teal: #539394;
 }
 
 /* Define Tailwind v4 theme using @theme inline directive */
@@ -93,17 +113,28 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-muted: var(--destructive-muted);
+  --color-destructive-muted-foreground: var(--destructive-muted-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-muted: var(--success-muted);
+  --color-success-muted-foreground: var(--success-muted-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-muted: var(--warning-muted);
+  --color-warning-muted-foreground: var(--warning-muted-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
 
   /* Custom brand colors */
-  --color-deep-blue: #384c6b;
-  --color-darker-blue: #2c3c55;
-  --color-lighter-blue: #9ba5b5;
-  --color-golden-brown: #996515;
-  --color-footer-bg: #384c6b;
-  --color-icon-blue: #124189;
+  --color-deep-blue: var(--deep-blue);
+  --color-darker-blue: var(--darker-blue);
+  --color-lighter-blue: var(--lighter-blue);
+  --color-golden-brown: var(--golden-brown);
+  --color-footer-bg: var(--footer-bg);
+  --color-icon-blue: var(--icon-blue);
+  --color-teal: var(--teal);
 
   /* Border radius */
   --radius-sm: calc(var(--radius) - 4px);
@@ -244,16 +275,18 @@
     box-shadow: 0 8px 20px oklch(var(--primary) / 0.12);
     transition: background-color .15s ease, transform .12s ease, box-shadow .15s ease;
   }
-  .btn:hover {
+  .btn:hover:not(:disabled) {
     background-color: color-mix(in oklch, var(--primary) 90%, black 10%);
     transform: translateY(-3px);
     box-shadow: 0 10px 24px oklch(var(--primary) / 0.16);
   }
   .btn:disabled {
-    opacity: 0.6;
+    background-color: var(--muted);
+    color: var(--muted-foreground);
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
+    opacity: 1;
   }
 
   .btn-outline {
@@ -285,6 +318,62 @@
     color: var(--accent-foreground);
     font-weight: 600;
     box-shadow: 0 8px 18px oklch(var(--accent) / 0.08);
+  }
+
+  /* Button variant for use over dark overlays (hero, page headers).
+     Solid CTA uses golden-brown (warm, high chroma contrast against cool
+     night photography); outline CTA uses near-white for legibility. */
+  .btn-on-dark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    height: 2.5rem;
+    padding: 0 .75rem;
+    border-radius: .5rem;
+    font-weight: 600;
+    background-color: var(--golden-brown);
+    color: var(--primary-foreground);
+    box-shadow: 0 8px 20px oklch(0 0 0 / 0.30);
+    transition: background-color .15s ease, transform .12s ease, box-shadow .15s ease;
+  }
+  .btn-on-dark:hover:not(:disabled) {
+    background-color: color-mix(in oklch, var(--golden-brown) 90%, black 10%);
+    transform: translateY(-3px);
+    box-shadow: 0 10px 24px oklch(0 0 0 / 0.36);
+  }
+  .btn-on-dark:disabled {
+    background-color: var(--muted);
+    color: var(--muted-foreground);
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+  .btn-outline-on-dark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    height: 2.5rem;
+    padding: 0 .75rem;
+    border-radius: .5rem;
+    font-weight: 600;
+    background-color: var(--teal);
+    color: var(--primary-foreground);
+    box-shadow: 0 8px 20px oklch(0 0 0 / 0.30);
+    transition: background-color .15s ease, transform .12s ease, box-shadow .15s ease;
+  }
+  .btn-outline-on-dark:hover:not(:disabled) {
+    background-color: color-mix(in oklch, var(--teal) 90%, black 10%);
+    transform: translateY(-3px);
+    box-shadow: 0 10px 24px oklch(0 0 0 / 0.36);
+  }
+  .btn-outline-on-dark:disabled {
+    background-color: var(--muted);
+    color: var(--muted-foreground);
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
   }
   .btn-accent:hover {
     background-color: color-mix(in oklch, var(--accent) 88%, black 12%);

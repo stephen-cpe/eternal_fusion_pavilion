@@ -15,29 +15,29 @@ import { render, screen } from "@testing-library/react";
 // Replicate the color thresholds exactly as implemented in Dashboard.jsx so
 // a future regression (e.g., someone changing the cutoffs) is caught.
 function getOccupancyColor(percentage) {
-  if (percentage === 0) return "bg-gray-100";
-  if (percentage < 50) return "bg-green-100 text-green-800";
-  if (percentage < 80) return "bg-yellow-100 text-yellow-800";
-  return "bg-red-100 text-red-800";
+  if (percentage === 0) return "bg-muted text-muted-foreground";
+  if (percentage < 50) return "bg-success-muted text-success-muted-foreground";
+  if (percentage < 80) return "bg-warning-muted text-warning-muted-foreground";
+  return "bg-destructive-muted text-destructive-muted-foreground";
 }
 
 describe("Dashboard heatmap color thresholds", () => {
   it("returns gray for 0%", () => {
-    expect(getOccupancyColor(0)).toBe("bg-gray-100");
+    expect(getOccupancyColor(0)).toBe("bg-muted text-muted-foreground");
   });
 
   it("returns green for occupancy below 50%", () => {
-    expect(getOccupancyColor(49)).toBe("bg-green-100 text-green-800");
+    expect(getOccupancyColor(49)).toBe("bg-success-muted text-success-muted-foreground");
   });
 
   it("returns yellow for occupancy in [50, 80)", () => {
-    expect(getOccupancyColor(50)).toBe("bg-yellow-100 text-yellow-800");
-    expect(getOccupancyColor(79)).toBe("bg-yellow-100 text-yellow-800");
+    expect(getOccupancyColor(50)).toBe("bg-warning-muted text-warning-muted-foreground");
+    expect(getOccupancyColor(79)).toBe("bg-warning-muted text-warning-muted-foreground");
   });
 
   it("returns red for occupancy >= 80", () => {
-    expect(getOccupancyColor(80)).toBe("bg-red-100 text-red-800");
-    expect(getOccupancyColor(100)).toBe("bg-red-100 text-red-800");
+    expect(getOccupancyColor(80)).toBe("bg-destructive-muted text-destructive-muted-foreground");
+    expect(getOccupancyColor(100)).toBe("bg-destructive-muted text-destructive-muted-foreground");
   });
 });
 

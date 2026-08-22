@@ -25,29 +25,29 @@ function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="bg-white p-8 rounded-xl shadow-md w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-muted">
+      <div className="bg-card p-8 rounded-xl shadow-md w-full max-w-md">
         <h1 className="text-2xl font-bold mb-6 text-center text-deep-blue">Admin Login</h1>
         <form onSubmit={handleLogin}>
           <div className="mb-4">
-            <label htmlFor="username" className="block text-gray-700 mb-2">Username</label>
+            <label htmlFor="username" className="block text-foreground mb-2">Username</label>
             <input
               id="username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-background"
               required
             />
           </div>
           <div className="mb-6">
-            <label htmlFor="password" className="block text-gray-700 mb-2">Password</label>
+            <label htmlFor="password" className="block text-foreground mb-2">Password</label>
             <input
               id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-background"
               required
             />
           </div>

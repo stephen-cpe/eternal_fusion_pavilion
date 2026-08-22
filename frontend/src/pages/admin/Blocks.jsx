@@ -123,12 +123,12 @@ function Blocks() {
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">Reservation Blocks</h1>
-        <button
-          onClick={() => setShowAddForm(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
-        >
-          Create Block
-        </button>
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="bg-deep-blue text-white px-4 py-2 rounded-md hover:bg-darker-blue transition-colors"
+          >
+            Create Block
+          </button>
       </div>
 
       <div className="bg-card p-6 rounded-xl shadow-md mb-8">
@@ -279,7 +279,7 @@ function Blocks() {
         {blocksQuery.isLoading ? (
           <div className="text-center py-8">Loading blocks...</div>
         ) : blocksQuery.isError ? (
-          <div className="text-center py-8 text-red-600">Failed to load blocks</div>
+          <div className="text-center py-8 text-destructive">Failed to load blocks</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-border">
@@ -325,7 +325,7 @@ function Blocks() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span
                           className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                            block.block_type === "hard" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"
+                            block.block_type === "hard" ? "bg-destructive-muted text-destructive-muted-foreground" : "bg-warning-muted text-warning-muted-foreground"
                           }`}
                         >
                           {block.block_type}
@@ -335,7 +335,7 @@ function Blocks() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <button
                           onClick={() => handleDelete(block.id)}
-                          className="text-red-600 hover:text-red-900"
+                          className="text-destructive hover:opacity-80"
                           disabled={deleteMutation.isPending}
                         >
                           Delete

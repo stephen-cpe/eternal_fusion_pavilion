@@ -26,7 +26,7 @@ function ReviewsSection() {
 
   const renderStars = (rating) => {
     return (
-      <div className="flex text-yellow-400 justify-center">
+      <div className="flex text-golden-brown justify-center">
         {[...Array(5)].map((_, i) => (
           <svg 
             key={i}

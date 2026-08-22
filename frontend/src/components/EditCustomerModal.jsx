@@ -127,7 +127,7 @@ function EditCustomerModal({ isOpen, onClose, customer }) {
             <button
               type="submit"
               disabled={isLoading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
+              className="px-4 py-2 bg-deep-blue text-white rounded-md hover:bg-darker-blue transition-colors disabled:opacity-50"
             >
               {isLoading ? "Saving..." : "Save Changes"}
             </button>

@@ -65,13 +65,13 @@ function Hero() {
           >
             <Link
               to="/reservations"
-              className="btn"
+              className="btn-on-dark"
             >
               Make a Reservation
             </Link>
             <Link
               to="/menu"
-              className="btn-outline"
+              className="btn-outline-on-dark"
             >
               View Menu
             </Link>

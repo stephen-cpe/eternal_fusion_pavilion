@@ -20,7 +20,7 @@ function AdminLayout() {
   });
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-100">
+    <div className="min-h-screen flex flex-col bg-muted">
       <AdminNavigation />
       <main className="flex-grow">
         <Outlet context={{ customersQuery, subscribersQuery }} />

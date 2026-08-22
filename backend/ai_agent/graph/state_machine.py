@@ -38,6 +38,7 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import interrupt
 
 from config import get_config
 from knowledge_loader import load_knowledge_texts
@@ -67,7 +68,14 @@ class AgentState(TypedDict, total=False):
     in_scope: bool
     source: str  # "rag" | "agent" | "escalation" | "out_of_scope" | "memory"
     guest_memories: list[dict[str, Any]]
+    conversation_summary: str
     start_time: float
+
+
+# Threshold: when messages exceed this count, summarize older messages.
+SUMMARY_THRESHOLD = 12
+# Number of recent messages to keep verbatim (system + last few turns).
+KEEP_RECENT = 6
 
 
 # ---------------------------------------------------------------------------
@@ -104,14 +112,40 @@ def memory_retrieve_node(state: AgentState) -> dict[str, Any]:
 
 
 def triage_node(state: AgentState) -> dict[str, Any]:
-    """Scope check: is this question in scope for EFP?"""
+    """Scope check: is this question in scope for EFP?
+
+    Note: even if this returns out-of-scope, route_after_triage may override
+    the routing to RAG for continuation turns (existing messages in the
+    thread) or personal questions from known guests (with stored memories).
+    In those cases the out-of-scope answer is cleared so it doesn't leak.
+    """
     question = state["question"]
     knowledge_texts = load_knowledge_texts()
     in_scope = is_in_scope(question, knowledge_texts)
     logger.info("[triage] in_scope=%s", in_scope)
     if in_scope:
         return {"in_scope": True, "source": "rag"}
-    # Out of scope: set the redirect answer so response_node has it.
+
+    # Check if this is a continuation turn — route_after_triage will override
+    # to RAG, so we should not set the out-of-scope redirect answer.
+    existing_messages = state.get("messages", [])
+    if existing_messages and len(existing_messages) >= 2:
+        logger.info("[triage] out-of-scope but continuation turn — will route to RAG")
+        return {"in_scope": False, "source": "rag"}
+
+    # Check if the guest has memories and the question is personal.
+    memories = state.get("guest_memories", [])
+    if memories:
+        question_lower = question.lower()
+        personal_indicators = [
+            "my", "i ", "me", "i'm", "i am", "dietary", "allergy", "allergic",
+            "preference", "prefer", "remember", "know", "profile", "name", "email",
+        ]
+        if any(ind in question_lower for ind in personal_indicators):
+            logger.info("[triage] out-of-scope but personal question + memories — will route to RAG")
+            return {"in_scope": False, "source": "rag"}
+
+    # Genuinely out of scope.
     out_of_scope_answer = (
         "I'm the Eternal Fusion Pavilion concierge and can help "
         "with our menu, our story, our locations, and reservations. "
@@ -201,6 +235,77 @@ def rag_node(state: AgentState) -> dict[str, Any]:
     }
 
 
+def summarize_node(state: AgentState) -> dict[str, Any]:
+    """Summarize older messages when the conversation gets too long.
+
+    Roadmap item 3: prevents unbounded context window growth. When the
+    message count exceeds SUMMARY_THRESHOLD, this node:
+    1. Takes the older messages (everything except the system prompt + the
+       last KEEP_RECENT messages).
+    2. Calls the LLM to summarize them into a compact paragraph.
+    3. Replaces the message list with: [system_prompt_with_summary] + [recent messages].
+
+    The summary is stored in state["conversation_summary"] so it persists
+    across turns via the checkpointer.
+    """
+    messages = state.get("messages", [])
+    if len(messages) <= SUMMARY_THRESHOLD:
+        # Not enough messages to warrant summarization.
+        return {}
+
+    # Keep the system prompt (messages[0]) and the last KEEP_RECENT messages.
+    system_msg = messages[0]
+    recent_messages = messages[-KEEP_RECENT:]
+    older_messages = messages[1:-KEEP_RECENT]
+
+    if not older_messages:
+        return {}
+
+    # Build a transcript of the older messages for the summarizer.
+    transcript_parts = []
+    for msg in older_messages:
+        role = msg.get("role", "unknown")
+        content = msg.get("content", "")
+        if content:
+            transcript_parts.append(f"{role}: {content[:500]}")
+    transcript = "\n".join(transcript_parts)
+
+    # Use the existing LLM client to summarize (reuse the same model).
+    existing_summary = state.get("conversation_summary", "")
+    summary_prompt = (
+        "Summarize the following conversation between a guest and the "
+        "Eternal Fusion Pavilion concierge. Keep key facts: what was "
+        "discussed, any reservation details, guest preferences, and "
+        "decisions made. Be concise — 2-3 sentences max.\n\n"
+    )
+    if existing_summary:
+        summary_prompt += f"Previous summary: {existing_summary}\n\n"
+    summary_prompt += f"Conversation to summarize:\n{transcript}\n\nSummary:"
+
+    client = get_ollama_client()
+    try:
+        new_summary = client.chat([
+            {"role": "system", "content": "You are a conversation summarizer. Output only the summary, nothing else."},
+            {"role": "user", "content": summary_prompt},
+        ])
+    except Exception as exc:
+        logger.warning("[summarize] LLM call failed (%s); skipping summarization", exc)
+        return {}
+
+    # Build the new message list: system prompt (with summary) + recent messages.
+    new_system = {
+        "role": "system",
+        "content": system_msg["content"] + f"\n\n[Conversation Summary — what happened so far]\n{new_summary}",
+    }
+    new_messages = [new_system] + recent_messages
+
+    logger.info(
+        "[summarize] compressed %d messages to %d (summary: %d chars)",
+        len(messages), len(new_messages), len(new_summary),
+    )
+    return {"messages": new_messages, "conversation_summary": new_summary}
+
+
 def agent_node(state: AgentState) -> dict[str, Any]:
     """Call the LLM with tools. Returns tool_calls or a final answer."""
     client = get_ollama_client()
@@ -234,7 +339,14 @@ def agent_node(state: AgentState) -> dict[str, Any]:
 
 
 def tools_node(state: AgentState) -> dict[str, Any]:
-    """Execute tool calls and append results to messages."""
+    """Execute tool calls and append results to messages.
+
+    Hard HITL interrupt for create_reservation (Roadmap item 2):
+    Before executing create_reservation, the graph pauses via interrupt()
+    and sends the reservation details to the frontend. The user must
+    explicitly confirm before the booking is made. If the user cancels,
+    the tool returns a cancellation result instead of calling the API.
+    """
     messages = list(state.get("messages", []))
     tool_calls = state.get("tool_calls", [])
     existing_results = list(state.get("tool_results", []))
@@ -250,6 +362,43 @@ def tools_node(state: AgentState) -> dict[str, Any]:
             except json.JSONDecodeError:
                 tool_args = {}
 
+        # Hard HITL gate: confirm before executing create_reservation.
+        if tool_name == "create_reservation":
+            # Pause the graph and send reservation details to the frontend.
+            # The interrupt() call returns the user's decision when resumed.
+            confirmation_request = {
+                "type": "booking_confirmation",
+                "details": tool_args,
+                "message": (
+                    f"Please confirm your reservation:\n"
+                    f"- Location ID: {tool_args.get('location_id')}\n"
+                    f"- Date: {tool_args.get('date')}\n"
+                    f"- Time: {tool_args.get('time')}\n"
+                    f"- Party size: {tool_args.get('party_size')}\n"
+                    f"- Name: {tool_args.get('name')}\n"
+                    f"- Email: {tool_args.get('email')}\n"
+                    f"Shall I confirm this booking?"
+                ),
+            }
+            logger.info("[tools] HITL interrupt for create_reservation")
+            user_decision = interrupt(confirmation_request)
+
+            if not user_decision or not user_decision.get("confirmed"):
+                # User cancelled — return a cancellation result.
+                result = {
+                    "success": False,
+                    "error": "The guest cancelled the reservation request.",
+                    "cancelled": True,
+                }
+                existing_results.append({"name": tool_name, "arguments": tool_args, "result": result})
+                messages.append({"role": "assistant", "content": state.get("answer", ""), "tool_calls": [tc]})
+                messages.append({"role": "tool", "name": tool_name, "content": json.dumps(result)})
+                logger.info("[tools] reservation cancelled by user")
+                return {"messages": messages, "tool_results": existing_results, "tool_calls": []}
+
+            # User confirmed — proceed with the reservation.
+            logger.info("[tools] reservation confirmed by user, executing create_reservation")
+
         logger.info("[tools] executing %s(%s)", tool_name, tool_args)
         result = execute_tool(tool_name, tool_args)
 
@@ -264,7 +413,27 @@ def tools_node(state: AgentState) -> dict[str, Any]:
 
 def escalation_node(state: AgentState) -> dict[str, Any]:
     """HITL interrupt: signal that human assistance is needed."""
-    reason = state.get("escalation_reason", "Your request requires assistance from our team.")
+    reason = state.get("escalation_reason", "")
+
+    # If no explicit reason was set, check if the routing guardrail
+    # routed here due to party_size > 12 in a create_reservation tool call.
+    if not reason:
+        for tc in state.get("tool_calls", []):
+            func_info = tc.get("function", tc)
+            if func_info.get("name") == "create_reservation":
+                tool_args = func_info.get("arguments", {})
+                if isinstance(tool_args, str):
+                    try:
+                        tool_args = json.loads(tool_args)
+                    except json.JSONDecodeError:
+                        tool_args = {}
+                party_size = tool_args.get("party_size", 0)
+                if isinstance(party_size, (int, float)) and party_size > 12:
+                    reason = f"Party size of {int(party_size)} exceeds our online booking limit of 12 guests."
+
+    if not reason:
+        reason = "Your request requires assistance from our team."
+
     answer = (
         f"I apologize, but {reason.lower()} "
         "I'll have our team follow up with you personally to assist with this. "
@@ -322,14 +491,26 @@ def memory_store_node(state: AgentState) -> dict[str, Any]:
 def route_after_triage(state: AgentState) -> str:
     """Route to rag (in scope) or response (out of scope).
 
-    If the guest has stored memories, treat personal-profile questions as
-    in-scope so the RAG node injects the memories into context — even if the
-    keywords don't overlap with the knowledge base.
+    Three override paths that route to RAG even when keyword overlap fails:
+    1. Continuation turn: if the thread has existing checkpointed messages,
+       short follow-up questions ("how much is it?", "book it") are treated
+       as in-scope because the LLM has context from prior turns.
+    2. Guest memories: if the guest has stored memories and the question
+       seems personal (allergy, preference, "remember"), route to RAG so
+       the memories are injected into context.
+    3. Greetings are always out-of-scope regardless.
     """
     if state.get("in_scope"):
         return "rag"
 
-    # If the guest has memories and the question seems personal, route to rag.
+    # Override 1: continuation turn — the thread has prior messages, so
+    # short follow-up questions with pronouns/references are in context.
+    existing_messages = state.get("messages", [])
+    if existing_messages and len(existing_messages) >= 2:
+        logger.info("[triage] in_scope override: continuation turn (%d messages)", len(existing_messages))
+        return "rag"
+
+    # Override 2: guest has memories + personal question keywords.
     memories = state.get("guest_memories", [])
     if memories:
         question_lower = state.get("question", "").lower()
@@ -346,11 +527,40 @@ def route_after_triage(state: AgentState) -> str:
 
 
 def route_after_agent(state: AgentState) -> str:
-    """Route to tools, escalation, or response based on agent output."""
+    """Route to tools, escalation, or response based on agent output.
+
+    Includes a deterministic guardrail (Architect 2C): if the LLM requests
+    create_reservation with party_size > 12, bypass the tool node entirely
+    and route to escalation. This is defense-in-depth on top of the
+    client-side guardrail in the tool wrapper.
+    """
     if state.get("needs_escalation"):
         return "escalation"
-    if state.get("tool_calls") and state.get("iteration_count", 0) < MAX_TOOL_ITERATIONS:
+
+    tool_calls = state.get("tool_calls", [])
+    if tool_calls and state.get("iteration_count", 0) < MAX_TOOL_ITERATIONS:
+        # Deterministic guardrail: block create_reservation with party_size > 12.
+        for tc in tool_calls:
+            func_info = tc.get("function", tc)
+            tool_name = func_info.get("name", "")
+            if tool_name == "create_reservation":
+                tool_args = func_info.get("arguments", {})
+                if isinstance(tool_args, str):
+                    try:
+                        import json as _json
+                        tool_args = _json.loads(tool_args)
+                    except _json.JSONDecodeError:
+                        tool_args = {}
+                party_size = tool_args.get("party_size", 0)
+                if isinstance(party_size, (int, float)) and party_size > 12:
+                    logger.info(
+                        "[route] blocking create_reservation with party_size=%d, routing to escalation",
+                        party_size,
+                    )
+                    # Set the escalation reason so escalation_node has it.
+                    return "escalation"
         return "tools"
+
     return "response"
 
 
@@ -364,6 +574,10 @@ def build_graph():
 
     Graph flow:
       START -> memory_retrieve -> triage -> (rag | response) -> ... -> response -> memory_store -> END
+
+    Uses a Postgres-backed checkpointer so thread state survives agent
+    restarts and is shared across workers (Architect Roadmap item 1).
+    Falls back to MemorySaver if PostgresSaver fails to initialize.
     """
     graph = StateGraph(AgentState)
 
@@ -371,6 +585,7 @@ def build_graph():
     graph.add_node("memory_retrieve", memory_retrieve_node)
     graph.add_node("triage", triage_node)
     graph.add_node("rag", rag_node)
+    graph.add_node("summarize", summarize_node)
     graph.add_node("agent", agent_node)
     graph.add_node("tools", tools_node)
     graph.add_node("escalation", escalation_node)
@@ -381,7 +596,8 @@ def build_graph():
     graph.add_edge(START, "memory_retrieve")
     graph.add_edge("memory_retrieve", "triage")
     graph.add_conditional_edges("triage", route_after_triage, {"rag": "rag", "response": "response"})
-    graph.add_edge("rag", "agent")
+    graph.add_edge("rag", "summarize")
+    graph.add_edge("summarize", "agent")
     graph.add_conditional_edges(
         "agent",
         route_after_agent,
@@ -392,9 +608,34 @@ def build_graph():
     graph.add_edge("response", "memory_store")
     graph.add_edge("memory_store", END)
 
-    # Compile with a memory checkpointer (for future HITL resume).
-    checkpointer = MemorySaver()
+    # Compile with a Postgres-backed checkpointer.
+    checkpointer = _get_checkpointer()
     return graph.compile(checkpointer=checkpointer)
+
+
+def _get_checkpointer():
+    """Create a Postgres-backed checkpointer, with MemorySaver fallback.
+
+    Uses psycopg (v3) to create a persistent connection with autocommit.
+    The PostgresSaver creates its own tables (checkpoints, checkpoint_writes)
+    via .setup() — these are separate from the EFP schema in init_db.sql.
+    """
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+        from langgraph.checkpoint.postgres import PostgresSaver
+
+        from config import get_config
+        cfg = get_config()
+        conn_string = f"host={cfg.db_host} port={cfg.db_port} dbname={cfg.db_name} user={cfg.db_user} password={cfg.db_password}"
+        conn = psycopg.connect(conn_string, autocommit=True, prepare_threshold=0, row_factory=dict_row)
+        saver = PostgresSaver(conn)
+        saver.setup()
+        logger.info("PostgresSaver checkpointer initialized (tables: checkpoints, checkpoint_writes)")
+        return saver
+    except Exception as exc:
+        logger.warning("PostgresSaver failed (%s); falling back to MemorySaver", exc)
+        return MemorySaver()
 
 
 # Singleton

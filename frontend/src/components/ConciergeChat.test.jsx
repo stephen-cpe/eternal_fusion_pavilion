@@ -11,9 +11,10 @@ import { MemoryRouter } from "react-router-dom";
 vi.mock("../services/ai_api", () => ({
   streamChat: vi.fn(),
   getGuestId: vi.fn(() => "test-guest-uuid"),
+  getThreadId: vi.fn(() => "test-thread-uuid"),
   newThreadId: vi.fn(() => "test-thread-uuid"),
   clearThreadId: vi.fn(),
-  getThreadId: vi.fn(() => ""),
+  streamResume: vi.fn(),
 }));
 
 // Mock framer-motion to avoid animation timing issues in tests.
@@ -28,7 +29,7 @@ vi.mock("framer-motion", () => ({
 }));
 
 import ConciergeChat from "../components/ConciergeChat";
-import { streamChat } from "../services/ai_api";
+import { streamChat, streamResume } from "../services/ai_api";
 
 function renderChat() {
   return render(
@@ -218,5 +219,72 @@ describe("ConciergeChat", () => {
       expect(screen.getByText("Reservation Confirmed")).toBeDefined();
     }, { timeout: 3000 });
     expect(screen.getByText(/JPN-X1234/)).toBeDefined();
+  });
+
+  it("renders HITL confirmation card when interrupted", async () => {
+    streamChat.mockImplementation(async (question, callbacks) => {
+      callbacks.onDone({
+        done: true,
+        interrupted: true,
+        thread_id: "interrupt-thread-1",
+        interrupt_data: {
+          type: "booking_confirmation",
+          details: { location_id: 1, date: "2026-08-29", time: "19:00", party_size: 4, name: "John", email: "john@example.com" },
+          message: "Please confirm your reservation:\n- Location ID: 1\n- Date: 2026-08-29\n- Time: 19:00\n- Party size: 4\n- Name: John\n- Email: john@example.com\nShall I confirm this booking?",
+        },
+      });
+    });
+
+    renderChat();
+    fireEvent.click(screen.getByLabelText(/open concierge/i));
+
+    const input = screen.getByLabelText(/type your message/i);
+    fireEvent.change(input, { target: { value: "book a table for 4" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Booking Confirmation Required/i)).toBeDefined();
+    });
+    expect(screen.getByText(/Confirm Booking/i)).toBeDefined();
+    expect(screen.getByText(/Cancel/i)).toBeDefined();
+  });
+
+  it("calls streamResume when user confirms", async () => {
+    streamResume.mockImplementation(async (threadId, confirmed, callbacks) => {
+      callbacks.onToken("Your reservation is confirmed!");
+      callbacks.onDone({ done: true });
+    });
+
+    streamChat.mockImplementation(async (question, callbacks) => {
+      callbacks.onDone({
+        done: true,
+        interrupted: true,
+        thread_id: "confirm-thread",
+        interrupt_data: {
+          type: "booking_confirmation",
+          details: {},
+          message: "Confirm?",
+        },
+      });
+    });
+
+    renderChat();
+    fireEvent.click(screen.getByLabelText(/open concierge/i));
+
+    const input = screen.getByLabelText(/type your message/i);
+    fireEvent.change(input, { target: { value: "book it" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Confirm Booking/i)).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByText(/Confirm Booking/i));
+
+    await waitFor(() => {
+      expect(streamResume).toHaveBeenCalled();
+      expect(streamResume.mock.calls[0][0]).toBe("confirm-thread");
+      expect(streamResume.mock.calls[0][1]).toBe(true);
+    });
   });
 });

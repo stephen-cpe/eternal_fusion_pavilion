@@ -93,9 +93,9 @@ function NewsletterSignup() {
               
               {message && (
                 <div className={`mt-4 p-4 rounded-lg text-sm ${
-                  messageType === 'success' 
-                    ? 'bg-green-50 text-green-800 border border-green-200' 
-                    : 'bg-red-50 text-red-800 border border-red-200'
+                  messageType === 'success'
+                    ? 'bg-success-muted text-success-muted-foreground border border-success/30'
+                    : 'bg-destructive-muted text-destructive-muted-foreground border border-destructive/30'
                 }`}>
                   {message}
                 </div>

@@ -67,6 +67,49 @@ export function clearThreadId() {
 }
 
 /**
+ * Resume a paused graph after a HITL booking confirmation interrupt.
+ * Non-streaming version — returns the full result.
+ * @param {string} threadId - The thread ID of the paused conversation.
+ * @param {boolean} confirmed - Whether the user confirmed the booking.
+ * @returns {Promise<object>} The agent's response after resuming.
+ */
+export async function resumeBooking(threadId, confirmed) {
+  const response = await fetch("/api/ai/resume", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      thread_id: threadId,
+      confirmed,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Resume returned HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * Resume a paused graph via the streaming endpoint.
+ * @param {string} threadId - The thread ID of the paused conversation.
+ * @param {boolean} confirmed - Whether the user confirmed the booking.
+ * @param {object} callbacks - SSE event callbacks (same as streamChat).
+ * @param {AbortSignal} [signal] - AbortController signal.
+ * @returns {Promise<void>}
+ */
+export async function streamResume(threadId, confirmed, callbacks, signal) {
+  const { streamAgent } = await import("../utils/sseParser");
+  return streamAgent(
+    "/api/ai/resume/stream",
+    {
+      thread_id: threadId,
+      confirmed,
+    },
+    callbacks,
+    signal,
+  );
+}
+
+/**
  * Send a non-streaming chat request to the agent.
  * @param {string} question - The guest's question.
  * @returns {Promise<object>} The agent's response.
