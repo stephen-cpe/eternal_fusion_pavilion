@@ -32,7 +32,7 @@ provided by Certbot / Let's Encrypt via a free DuckDNS domain.
 
 ---
 
-## Step 1: Launch EC2 Instance
+## Step 1: Launch EC2 Instance with Initialization Script
 
 1. Navigate to EC2 Dashboard, then Launch instance.
 
@@ -50,76 +50,43 @@ provided by Certbot / Let's Encrypt via a free DuckDNS domain.
 
 4. Configure storage: 30 GB GP3 SSD
 
-5. Click Launch instance.
+5. Advanced details:
+   - User data: Paste the initialization script below
 
-6. After launch, note the **Public IPv4 address** from the EC2 instance
-   details. You will need this for DuckDNS and SSH.
+### Initialization Script (User Data)
 
----
-
-## Step 2: Connect and Install System Packages
-
-Connect to your EC2 instance:
-
-```bash
-ssh -i "efp-app.pem" ec2-user@ec2-xx-xx-xx-xx.compute-1.amazonaws.com
-```
-
-Replace with your actual EC2 Public DNS.
-
-Update the system and install core packages:
+Copy this script to the User data field during launch. It installs all
+system packages (Python, Node.js, PostgreSQL, Nginx, Certbot), installs
+the PostgreSQL server development headers (required for pgvector),
+compiles and installs pgvector, initializes the database with the
+pgvector extension enabled, configures firewall rules, installs Ollama,
+and reboots.
 
 ```bash
+#!/bin/bash
+# Update system and install core dependencies
 sudo dnf update -y
 sudo dnf install -y python3.14 python3.14-pip python3.14-devel \
     nginx git postgresql18 postgresql18-server postgresql18-contrib \
-    postgresql18-devel firewalld certbot python3-certbot-nginx \
+    postgresql18-devel postgresql18-server-devel \
+    firewalld certbot python3-certbot-nginx \
     gcc make
-```
 
-Set Python 3.14 as the default:
-
-```bash
-sudo alternatives --install /usr/bin/python python /usr/bin/python3.14 1
-sudo alternatives --set python /usr/bin/python3.14
-```
-
-Install Node.js 22 LTS (for the React frontend build):
-
-```bash
+# Install Node.js 22 LTS
 curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
 sudo dnf install -y nodejs
 sudo npm install -g npm@latest
-node -v
-npm --version
-```
 
-Configure the firewall:
+# Set Python 3.14 as default
+sudo alternatives --install /usr/bin/python python /usr/bin/python3.14 1
+sudo alternatives --set python /usr/bin/python3.14
 
-```bash
-sudo systemctl start firewalld
-sudo systemctl enable firewalld
-sudo firewall-cmd --permanent --add-service=http
-sudo firewall-cmd --permanent --add-service=https
-sudo firewall-cmd --permanent --add-service=ssh
-sudo firewall-cmd --reload
-```
-
----
-
-## Step 3: Initialize PostgreSQL
-
-Initialize and start PostgreSQL:
-
-```bash
+# Initialize PostgreSQL database
 sudo postgresql-setup --initdb
 sudo systemctl start postgresql
 sudo systemctl enable postgresql
-```
 
-Create the database and user:
-
-```bash
+# Create application database and user
 sudo -u postgres psql << 'EOF'
 CREATE USER efp_user WITH PASSWORD 'strongpassword';
 CREATE DATABASE eternal_fusion_pavilion_database;
@@ -129,81 +96,118 @@ GRANT ALL PRIVILEGES ON DATABASE eternal_fusion_pavilion_database TO efp_user;
 GRANT USAGE ON SCHEMA public TO efp_user;
 GRANT CREATE ON SCHEMA public TO efp_user;
 EOF
-```
 
-Configure PostgreSQL to accept local password connections:
-
-```bash
+# Configure PostgreSQL to accept local password connections
 sudo sed -i "s/^host\s*all\s*all\s*127\.0\.0\.1\/32\s*\w*/host    all             all             127.0.0.1\/32            md5/" /var/lib/pgsql/data/pg_hba.conf
 sudo sed -i "s/^host\s*all\s*all\s*::1\/128\s*\w*/host    all             all             ::1\/128                 md5/" /var/lib/pgsql/data/pg_hba.conf
 sudo sed -i "s/^local\s*all\s*all\s*peer/local   all             all                                     md5/" /var/lib/pgsql/data/pg_hba.conf
 sudo systemctl restart postgresql
-```
 
----
-
-## Step 4: Install pgvector Extension
-
-pgvector must be compiled from source on Amazon Linux 2023.
-
-```bash
+# Build and install pgvector
 cd /tmp
 git clone --branch v0.8.6 https://github.com/pgvector/pgvector.git
 cd pgvector
 sudo make PG_CONFIG=/usr/bin/pg_config
 sudo make install PG_CONFIG=/usr/bin/pg_config
-```
 
-Verify the files were installed:
-
-```bash
-ls /usr/share/pgsql/extension/vector*
-ls /usr/lib64/pgsql/vector.so
-```
-
-Enable the extension in the database:
-
-```bash
+# Enable pgvector extension in the database
 sudo -u postgres psql -d eternal_fusion_pavilion_database -c "CREATE EXTENSION IF NOT EXISTS vector;"
-```
-
-Restart PostgreSQL to load the shared library:
-
-```bash
 sudo systemctl restart postgresql
+
+# Create application directory
+sudo mkdir -p /var/www/efp
+sudo chown ec2-user:ec2-user /var/www/efp
+
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+sudo systemctl enable ollama
+
+# Set firewall rules
+sudo systemctl start firewalld
+sudo systemctl enable firewalld
+sudo firewall-cmd --permanent --add-service=http
+sudo firewall-cmd --permanent --add-service=https
+sudo firewall-cmd --permanent --add-service=ssh
+sudo firewall-cmd --reload
+
+# Reboot to apply all updates
+sudo reboot
 ```
+
+Note: Change `'strongpassword'` to a more secure password in production.
+The script reboots at the end. Wait 2-3 minutes after launch before
+connecting via SSH to allow the initialization and reboot to complete.
+
+6. Click Launch instance.
+
+7. After launch: Note the **Public IPv4 address** from EC2 instance
+   details. You will need this for DuckDNS and SSH.
 
 ---
 
-## Step 5: Deploy Application Code
+## Step 2: Connect to EC2 and Deploy Application Code
 
-Create the application directory and clone the repository:
+Wait 2-3 minutes for the initialization script to finish and the instance
+to reboot. Then connect via SSH:
 
 ```bash
-sudo mkdir -p /var/www/efp
-sudo chown ec2-user:ec2-user /var/www/efp
+ssh -i "efp-app.pem" ec2-user@ec2-xx-xx-xx-xx.compute-1.amazonaws.com
+```
+
+Replace with your actual EC2 Public DNS.
+
+The initialization script changed PostgreSQL's authentication to require
+passwords for all connections, including the local `postgres` superuser.
+Before running database commands as `postgres`, temporarily switch to
+peer authentication so the `postgres` user can connect without a
+password:
+
+```bash
+sudo sed -i 's/^local   all             all                                     md5/local   all             all                                     peer/' /var/lib/pgsql/data/pg_hba.conf
+sudo systemctl restart postgresql
+```
+
+Clone the repository:
+
+```bash
 cd /var/www/efp
 git clone https://github.com/stephen-cpe/eternal_fusion_pavilion.git .
 ```
 
-Initialize the database schema:
+Initialize the database schema (the pgvector extension is already
+enabled from the initialization script, so all tables including the
+AI agent tables will be created successfully):
 
 ```bash
 sudo -u postgres psql -d eternal_fusion_pavilion_database -f /var/www/efp/init_db.sql
 ```
 
-Verify the tables were created:
+Grant permissions to `efp_user` on all tables and sequences:
+
+```bash
+sudo -u postgres psql -d eternal_fusion_pavilion_database -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO efp_user; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO efp_user; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO efp_user; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO efp_user;"
+```
+
+Verify all 11 tables were created:
 
 ```bash
 sudo -u postgres psql -d eternal_fusion_pavilion_database -c "\dt"
 ```
 
-You should see all core tables plus the AI agent tables
-(efp_knowledge_chunks, chat_threads, guest_ai_memory).
+You should see all core tables (locations, rooms, reservations, etc.)
+plus the AI agent tables (efp_knowledge_chunks, chat_threads,
+guest_ai_memory).
+
+Restore password authentication (important for security):
+
+```bash
+sudo sed -i 's/^local   all             all                                     peer/local   all             all                                     md5/' /var/lib/pgsql/data/pg_hba.conf
+sudo systemctl restart postgresql
+```
 
 ---
 
-## Step 6: Configure Environment Variables
+## Step 3: Configure Environment Variables
 
 Create the `.env` file:
 
@@ -233,7 +237,7 @@ CHAT_MODEL=deepseek-v4-flash:cloud
 
 ---
 
-## Step 7: Configure Flask Backend
+## Step 4: Configure Flask Backend
 
 Create the Flask virtual environment and install dependencies:
 
@@ -278,29 +282,18 @@ WantedBy=multi-user.target
 
 ---
 
-## Step 8: Install Ollama and Configure AI Agent
+## Step 5: Configure AI Agent
 
-### 8.1 Install Ollama
-
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-```
-
-Pull the embedding model:
+The initialization script already installed Ollama. Pull the embedding
+model as the `ec2-user` (the User Data script runs as root, so the model
+must be pulled again for the current user):
 
 ```bash
 ollama pull qwen3-embedding:0.6b
-```
-
-Verify it is available:
-
-```bash
 ollama list
 ```
 
 You should see `qwen3-embedding:0.6b` in the list.
-
-### 8.2 Configure AI Agent Virtual Environment
 
 Create a separate virtual environment for the AI agent:
 
@@ -310,14 +303,11 @@ python3.14 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
-deactivate
 ```
 
-### 8.3 Ingest the Knowledge Base
+Ingest the knowledge base (embeds 35 documents into pgvector):
 
 ```bash
-cd /var/www/efp/backend/ai_agent
-source venv/bin/activate
 python -m rag.ingest_knowledge
 ```
 
@@ -331,7 +321,13 @@ PGPASSWORD=strongpassword psql -h localhost -U efp_user -d eternal_fusion_pavili
 
 Should return 35.
 
-### 8.4 Create AI Agent systemd Service
+Deactivate the venv:
+
+```bash
+deactivate
+```
+
+Create the AI agent systemd service:
 
 ```bash
 sudo nano /etc/systemd/system/efp-ai-agent.service
@@ -359,7 +355,7 @@ WantedBy=multi-user.target
 
 ---
 
-## Step 9: Build Frontend
+## Step 6: Build Frontend
 
 ```bash
 cd /var/www/efp/frontend
@@ -377,13 +373,13 @@ sudo find /var/www/efp/frontend/dist -type f -exec chmod 644 {} \;
 
 ---
 
-## Step 10: Configure DuckDNS (Free Domain)
+## Step 7: Configure DuckDNS (Free Domain)
 
 1. Go to [DuckDNS.org](https://www.duckdns.org/) and log in (free, uses
    Google/GitHub).
 
-2. In the subdomain field, enter `eternalfusionpavilion` (creates
-   `eternalfusionpavilion.duckdns.org`).
+2. In the subdomain field, enter `eternalfusionpavilion2` (creates
+   `eternalfusionpavilion2.duckdns.org`).
 
 3. Set **IP/URL** to your EC2 **Public IPv4 address** (from Step 1).
 
@@ -392,7 +388,7 @@ sudo find /var/www/efp/frontend/dist -type f -exec chmod 644 {} \;
 5. Verify propagation (5-10 min):
 
 ```bash
-dig eternalfusionpavilion.duckdns.org
+dig eternalfusionpavilion2.duckdns.org
 ```
 
 Should resolve to your EC2 IP.
@@ -402,7 +398,7 @@ Note: If you stop/start EC2, the IP changes unless using an Elastic IP
 
 ---
 
-## Step 11: Configure Nginx
+## Step 8: Configure Nginx
 
 Remove the default config and create the EFP config (HTTP only first;
 Certbot will add HTTPS later):
@@ -418,7 +414,7 @@ Add:
 server {
     listen 80;
     listen [::]:80;
-    server_name eternalfusionpavilion.duckdns.org;
+    server_name eternalfusionpavilion2.duckdns.org;
 
     # React app root
     root /var/www/efp/frontend/dist;
@@ -481,16 +477,16 @@ inside the `http { }` block and change it to `128;`. Then re-run
 
 ---
 
-## Step 12: Obtain SSL Certificate (Certbot / Let's Encrypt)
+## Step 9: Obtain SSL Certificate (Certbot / Let's Encrypt)
 
 Run Certbot in two steps for reliability:
 
 ```bash
 # Step 1: Obtain the certificate (without redirect)
-sudo certbot --nginx -d eternalfusionpavilion.duckdns.org --email youremail@address.com --agree-tos
+sudo certbot --nginx -d eternalfusionpavilion2.duckdns.org --email youremail@address.com --agree-tos
 
 # Step 2: Add the HTTP -> HTTPS redirect
-sudo certbot --nginx -d eternalfusionpavilion.duckdns.org --email youremail@address.com --agree-tos --redirect
+sudo certbot --nginx -d eternalfusionpavilion2.duckdns.org --email youremail@address.com --agree-tos --redirect
 ```
 
 Test auto-renewal:
@@ -499,24 +495,25 @@ Test auto-renewal:
 sudo certbot renew --dry-run
 ```
 
-Enable the auto-renewal timer:
+Enable the auto-renewal timer. On Amazon Linux 2023, the timer is named
+`certbot-renew.timer` (not `certbot.timer` as on Ubuntu):
 
 ```bash
-sudo systemctl enable certbot.timer
-sudo systemctl start certbot.timer
+sudo systemctl enable certbot-renew.timer
+sudo systemctl start certbot-renew.timer
 ```
 
 Verify the timer is active:
 
 ```bash
-sudo systemctl status certbot.timer
+sudo systemctl status certbot-renew.timer
 ```
 
 Should show `active (waiting)`.
 
 ---
 
-## Step 13: Start All Services
+## Step 10: Start All Services
 
 Reload systemd and start all services:
 
@@ -538,9 +535,9 @@ sudo systemctl restart nginx
 
 ---
 
-## Step 14: Verify the Deployment
+## Step 11: Verify the Deployment
 
-### 14.1 Check Service Status
+### 11.1 Check Service Status
 
 ```bash
 sudo systemctl status efp-backend efp-ai-agent nginx postgresql
@@ -548,7 +545,7 @@ sudo systemctl status efp-backend efp-ai-agent nginx postgresql
 
 All should show `active (running)`.
 
-### 14.2 Check Health Endpoints
+### 11.2 Check Health Endpoints
 
 ```bash
 # Flask backend
@@ -570,26 +567,26 @@ The AI agent health check should return:
 }
 ```
 
-### 14.3 Test the Full Application
+### 11.3 Test the Full Application
 
 Wait 5-10 minutes for DNS/SSL propagation, then visit:
 
-- **Main site**: https://eternalfusionpavilion.duckdns.org
-- **Flask health**: https://eternalfusionpavilion.duckdns.org/api/health
-- **AI agent health**: https://eternalfusionpavilion.duckdns.org/api/ai/health
+- **Main site**: https://eternalfusionpavilion2.duckdns.org
+- **Flask health**: https://eternalfusionpavilion2.duckdns.org/api/health
+- **AI agent health**: https://eternalfusionpavilion2.duckdns.org/api/ai/health
 - **AI agent chat** (test query):
 
 ```bash
-curl -X POST https://eternalfusionpavilion.duckdns.org/api/ai/graph \
+curl -X POST https://eternalfusionpavilion2.duckdns.org/api/ai/graph \
   -H "Content-Type: application/json" \
   -d '{"question":"How much is the A5 Wagyu Ribeye?"}'
 ```
 
 The AI agent should respond with the correct price ($165.00).
 
-### 14.4 Test the Concierge Chat Widget
+### 11.4 Test the Concierge Chat Widget
 
-Open https://eternalfusionpavilion.duckdns.org in a browser. The floating
+Open https://eternalfusionpavilion2.duckdns.org in a browser. The floating
 concierge chat button should appear in the bottom-right corner. Click it
 and type a question to verify the full stack is working.
 
@@ -643,7 +640,11 @@ is correct.
 The pgvector extension was not created in the database. Run:
 
 ```bash
+sudo sed -i 's/^local   all             all                                     md5/local   all             all                                     peer/' /var/lib/pgsql/data/pg_hba.conf
+sudo systemctl restart postgresql
 sudo -u postgres psql -d eternal_fusion_pavilion_database -c "CREATE EXTENSION IF NOT EXISTS vector;"
+sudo sed -i 's/^local   all             all                                     peer/local   all             all                                     md5/' /var/lib/pgsql/data/pg_hba.conf
+sudo systemctl restart postgresql
 sudo systemctl restart efp-ai-agent
 ```
 
@@ -657,7 +658,17 @@ source venv/bin/activate
 python -m rag.ingest_knowledge
 ```
 
-**5. Permission Denied Errors (Nginx 5xx)**
+**5. Ollama model not found**
+
+The initialization script installs Ollama as root. Pull the model as
+`ec2-user`:
+
+```bash
+ollama pull qwen3-embedding:0.6b
+ollama list
+```
+
+**6. Permission Denied Errors (Nginx 5xx)**
 
 ```bash
 sudo chown -R ec2-user:nginx /var/www/efp/frontend/dist
@@ -665,7 +676,7 @@ sudo find /var/www/efp/frontend/dist -type d -exec chmod 755 {} \;
 sudo find /var/www/efp/frontend/dist -type f -exec chmod 644 {} \;
 ```
 
-**6. Ollama not running**
+**7. Ollama not running**
 
 ```bash
 systemctl status ollama
@@ -674,29 +685,32 @@ sudo systemctl enable ollama
 ollama list
 ```
 
-**7. DuckDNS IP changed after EC2 restart**
+**8. DuckDNS IP changed after EC2 restart**
 
 1. Go to DuckDNS.org and update the IP to the new public IPv4 address.
 2. Re-run Certbot:
    ```bash
-   sudo certbot --nginx -d eternalfusionpavilion.duckdns.org --email youremail@address.com --agree-tos --redirect
+   sudo certbot --nginx -d eternalfusionpavilion2.duckdns.org --email youremail@address.com --agree-tos --redirect
    ```
 
 For a stable IP, use an Elastic IP (free under AWS Free Tier).
 
-**8. certbot.timer does not exist**
+**9. PostgreSQL password authentication failed for user "postgres"**
 
-On Amazon Linux 2023, the timer unit name may differ. Check:
+The initialization script changed pg_hba.conf to require passwords for
+all connections. To run commands as the `postgres` superuser without a
+password, temporarily switch to peer authentication:
 
 ```bash
-systemctl list-timers | grep certbot
+sudo sed -i 's/^local   all             all                                     md5/local   all             all                                     peer/' /var/lib/pgsql/data/pg_hba.conf
+sudo systemctl restart postgresql
 ```
 
-If the timer exists under a different name, use that. If no timer
-exists, Certbot installs a cron job instead. Check:
+Run your `sudo -u postgres psql` commands, then restore:
 
 ```bash
-ls /etc/cron.d/ | grep certbot
+sudo sed -i 's/^local   all             all                                     peer/local   all             all                                     md5/' /var/lib/pgsql/data/pg_hba.conf
+sudo systemctl restart postgresql
 ```
 
 ---

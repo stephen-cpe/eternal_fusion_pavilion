@@ -416,11 +416,14 @@ Frontend tests: 66 tests pass (sseParser, ai_api, ConciergeChat, existing).
 
 ---
 
+## Project Demo
+
+Watch the demo: [https://www.youtube.com/watch?v=YVCg75mslgw](https://www.youtube.com/watch?v=YVCg75mslgw)
+
+---
+
 ## Roadmap (future work, not in current scope)
 
-- **Production deployment**: Nginx routing `/api/ai/*` to port 8000
-  alongside `/api/*` to port 5000; a systemd unit for the agent service;
-  AWS deployment guide updates.
 - **Token-streaming graph endpoint**: Enhance `/api/ai/graph/stream` to
   stream the LLM's answer token-by-token instead of a single answer frame.
 - **"Forget me" action**: Allow guests to clear their stored memories.
