@@ -1,206 +1,252 @@
-# **Deployment Guide using Amazon Linux 2023**
+# Deployment Guide using Amazon Linux 2023
 
-> **DISCLAIMER: This guide is currently outdated and unusable.**
-> It was written before the AI Agent (FastAPI on port 8000), pgvector,
-> and Ollama integration were added. The deployment steps do not cover
-> the AI agent service, the pgvector extension, or the separate venv.
-> This guide will be updated in the future to reflect the current
-> three-service architecture (Flask + FastAPI agent + React frontend).
+This guide provides step-by-step instructions to deploy the full Eternal
+Fusion Pavilion application (Flask backend + FastAPI AI agent + React
+frontend) on an AWS EC2 instance running Amazon Linux 2023.
 
-## Disclaimer
+The production environment uses Nginx as a reverse proxy, Gunicorn for
+the Flask backend, uvicorn for the FastAPI AI agent, PostgreSQL 18 with
+pgvector for the database, and local Ollama for embeddings. SSL is
+provided by Certbot / Let's Encrypt via a free DuckDNS domain.
 
-* This project is intended for **educational, testing, and experimentation purposes only**.
-* **Not suitable for production use**.
-* This guide and project will not be updated regularly.
-* Use at your own risk. No warranties, guarantees, or support are provided.
+## Technology Stack
+
+- Backend: Flask (Python 3.14+) on port 5000
+- AI Agent: FastAPI + LangGraph on port 8000
+- Frontend: React (Vite build) served by Nginx
+- Database: PostgreSQL 18 with pgvector extension
+- Embeddings: Local Ollama (qwen3-embedding:0.6b)
+- Chat LLM: Ollama Cloud (deepseek-v4-flash:cloud)
+- WSGI Server: Gunicorn (Flask)
+- ASGI Server: uvicorn (FastAPI agent)
+- Web/Proxy Server: Nginx
+- OS: Amazon Linux 2023 (64-bit x86)
+- Process Manager: systemd
+- SSL: Certbot / Let's Encrypt via DuckDNS
+
+## Instance Configuration
+
+- AMI: Amazon Linux 2023 AMI 6.18 (64-bit x86)
+- Instance type: t3.xlarge (4 vCPU, 16 GB RAM)
+- Storage: 30 GB GP3 SSD
 
 ---
 
-## **Step 1: Launch EC2 Instance (Amazon Linux)**
+## Step 1: Launch EC2 Instance
 
-Deploy the application server with PostgreSQL on cost-effective ARM architecture.
+1. Navigate to EC2 Dashboard, then Launch instance.
 
-### **1.1 Launch EC2 Instance**
-
-1. Navigate to **EC2 Dashboard** → **Launch instance**
-2. Configure instance:
+2. Configure the instance:
    - **Name**: `efp-app`
-   - **AMI**: Amazon Linux 2023 AMI 6.18 (64-bit ARM)
-   - **Instance type**: t4g.micro (Free Tier eligible)
+   - **AMI**: Amazon Linux 2023 AMI 6.18 (64-bit x86)
+   - **Instance type**: `t3.xlarge`
    - **Key pair**: Create new key pair (`efp-app.pem`) or use existing
-3. **Network settings**:
-   - In the launch wizard's network settings, ensure the following checkboxes are selected (they are enabled by default but verify):
-     - **Allow SSH traffic from** — your IP (for terminal access)
-     - **Allow HTTP traffic from the internet** (port 80)
-     - **Allow HTTPS traffic from the internet** (port 443)
-   - Ensure **Auto-assign public IP** is enabled.
-4. **Configure storage**: 8 GB GP3 (Free Tier includes 30 GB-month)
-5. **Advanced details**: 
-   - User data: Paste the initialization script below
 
-#### **Initialization Script (User Data)**
+3. Network settings - ensure these inbound rules are selected:
+   - **Allow SSH traffic from** your IP
+   - **Allow HTTP traffic from the internet** (port 80)
+   - **Allow HTTPS traffic from the internet** (port 443)
+   - Ensure **Auto-assign public IP** is enabled
 
-Copy this script to the **User data** field during launch. It installs PostgreSQL, Node.js, Python, Nginx, and configures the database:
+4. Configure storage: 30 GB GP3 SSD
+
+5. Click Launch instance.
+
+6. After launch, note the **Public IPv4 address** from the EC2 instance
+   details. You will need this for DuckDNS and SSH.
+
+---
+
+## Step 2: Connect and Install System Packages
+
+Connect to your EC2 instance:
 
 ```bash
-#!/bin/bash
-# Update system and install core dependencies
+ssh -i "efp-app.pem" ec2-user@ec2-xx-xx-xx-xx.compute-1.amazonaws.com
+```
+
+Replace with your actual EC2 Public DNS.
+
+Update the system and install core packages:
+
+```bash
 sudo dnf update -y
-sudo dnf install -y python3.14 python3.14-pip nginx git postgresql18 postgresql18-server postgresql18-contrib firewalld certbot python3-certbot-nginx
+sudo dnf install -y python3.14 python3.14-pip python3.14-devel \
+    nginx git postgresql18 postgresql18-server postgresql18-contrib \
+    postgresql18-devel firewalld certbot python3-certbot-nginx \
+    gcc make
+```
 
-curl -fsSL https://rpm.nodesource.com/setup_24.x | sudo bash -
-sudo dnf install -y nodejs
-sudo npm install -g npm@latest
+Set Python 3.14 as the default:
 
-# Install Python 3.13 as default
+```bash
 sudo alternatives --install /usr/bin/python python /usr/bin/python3.14 1
 sudo alternatives --set python /usr/bin/python3.14
+```
 
-# Initialize PostgreSQL database
-sudo postgresql-setup --initdb
+Install Node.js 22 LTS (for the React frontend build):
 
-sudo systemctl start postgresql
-sudo systemctl enable postgresql
+```bash
+curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
+sudo dnf install -y nodejs
+sudo npm install -g npm@latest
+node -v
+npm --version
+```
 
-# Create application database and user
-sudo -u postgres psql << EOF
-CREATE DATABASE eternal_fusion_pavilion_database;
-CREATE USER efp_user WITH PASSWORD 'strongpassword';
-ALTER USER efp_user WITH SUPERUSER;
-GRANT ALL PRIVILEGES ON DATABASE eternal_fusion_pavilion_database TO efp_user;
-\c eternal_fusion_pavilion_database;
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-EOF
+Configure the firewall:
 
-# Configure PostgreSQL to accept local connections
-sudo sed -i "s/^#listen_addresses = 'localhost'/listen_addresses = '*'/" /var/lib/pgsql/data/postgresql.conf
-sudo sed -i "s/^host\s*all\s*all\s*127\.0\.0\.1\/32\s*\w*/host    all             all             127.0.0.1\/32            md5/" /var/lib/pgsql/data/pg_hba.conf
-sudo sed -i "s/^host\s*all\s*all\s*::1\/128\s*\w*/host    all             all             ::1\/128                 md5/" /var/lib/pgsql/data/pg_hba.conf
-sudo sed -i "s/^local\s*all\s*all\s*peer/local   all             all                                     md5/" /var/lib/pgsql/data/pg_hba.conf
-echo "host    all             all             0.0.0.0/0               scram-sha-256" | sudo tee -a /var/lib/pgsql/data/pg_hba.conf
-
-# Restart PostgreSQL to apply authentication changes
-sudo systemctl restart postgresql
-
-# Create application directory
-sudo mkdir -p /var/www/efp
-sudo chown ec2-user:ec2-user /var/www/efp
-
-# Install PM2 for process management (optional)
-sudo npm install -g pm2
-
-# Set firewall rules
+```bash
 sudo systemctl start firewalld
 sudo systemctl enable firewalld
 sudo firewall-cmd --permanent --add-service=http
 sudo firewall-cmd --permanent --add-service=https
 sudo firewall-cmd --permanent --add-service=ssh
 sudo firewall-cmd --reload
-
-# Reboot to apply all updates
-sudo reboot
 ```
-
-**Note**: Change `'strongpassword'` to a more secure password in production.
 
 ---
 
-6. Click **Launch instance**
-7. **After launch**: Note the **Public IPv4 address** (e.g., `3.123.45.67`) from EC2 instance details. Use this for DuckDNS.
+## Step 3: Initialize PostgreSQL
 
-## **Step 2: Configure Application Environment**
-
-Connect to your EC2 instance and set up the application with local PostgreSQL.
-
-### **2.1 Connect to EC2 Instance**
+Initialize and start PostgreSQL:
 
 ```bash
-# SSH to your instance (replace with your Public DNS)
-ssh -i "efp-app.pem" ec2-user@ec2-xx-xx-xx-xx.compute-1.amazonaws.com
+sudo postgresql-setup --initdb
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
 ```
 
-### **2.2 Deploy Application Code**
+Create the database and user:
 
 ```bash
-# Clone the repository
+sudo -u postgres psql << 'EOF'
+CREATE USER efp_user WITH PASSWORD 'strongpassword';
+CREATE DATABASE eternal_fusion_pavilion_database;
+ALTER DATABASE eternal_fusion_pavilion_database OWNER TO efp_user;
+GRANT ALL PRIVILEGES ON DATABASE eternal_fusion_pavilion_database TO efp_user;
+\c eternal_fusion_pavilion_database
+GRANT USAGE ON SCHEMA public TO efp_user;
+GRANT CREATE ON SCHEMA public TO efp_user;
+EOF
+```
+
+Configure PostgreSQL to accept local password connections:
+
+```bash
+sudo sed -i "s/^host\s*all\s*all\s*127\.0\.0\.1\/32\s*\w*/host    all             all             127.0.0.1\/32            md5/" /var/lib/pgsql/data/pg_hba.conf
+sudo sed -i "s/^host\s*all\s*all\s*::1\/128\s*\w*/host    all             all             ::1\/128                 md5/" /var/lib/pgsql/data/pg_hba.conf
+sudo sed -i "s/^local\s*all\s*all\s*peer/local   all             all                                     md5/" /var/lib/pgsql/data/pg_hba.conf
+sudo systemctl restart postgresql
+```
+
+---
+
+## Step 4: Install pgvector Extension
+
+pgvector must be compiled from source on Amazon Linux 2023.
+
+```bash
+cd /tmp
+git clone --branch v0.8.6 https://github.com/pgvector/pgvector.git
+cd pgvector
+sudo make PG_CONFIG=/usr/bin/pg_config
+sudo make install PG_CONFIG=/usr/bin/pg_config
+```
+
+Verify the files were installed:
+
+```bash
+ls /usr/share/pgsql/extension/vector*
+ls /usr/lib64/pgsql/vector.so
+```
+
+Enable the extension in the database:
+
+```bash
+sudo -u postgres psql -d eternal_fusion_pavilion_database -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+Restart PostgreSQL to load the shared library:
+
+```bash
+sudo systemctl restart postgresql
+```
+
+---
+
+## Step 5: Deploy Application Code
+
+Create the application directory and clone the repository:
+
+```bash
+sudo mkdir -p /var/www/efp
+sudo chown ec2-user:ec2-user /var/www/efp
 cd /var/www/efp
 git clone https://github.com/stephen-cpe/eternal_fusion_pavilion.git .
-
-# Set proper permissions
-sudo chown -R ec2-user:ec2-user /var/www/efp
 ```
 
-### **2.3 Configure Environment Variables**
+Initialize the database schema:
 
-Create `.env` file
 ```bash
-sudo nano /var/www/efp/backend/.env
+sudo -u postgres psql -d eternal_fusion_pavilion_database -f /var/www/efp/init_db.sql
 ```
 
-Add the following content:
+Verify the tables were created:
+
+```bash
+sudo -u postgres psql -d eternal_fusion_pavilion_database -c "\dt"
+```
+
+You should see all core tables plus the AI agent tables
+(efp_knowledge_chunks, chat_threads, guest_ai_memory).
+
+---
+
+## Step 6: Configure Environment Variables
+
+Create the `.env` file:
+
+```bash
+nano /var/www/efp/backend/.env
+```
+
+Add the following content (replace placeholder values):
+
 ```ini
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=eternal_fusion_pavilion_database
 DB_USER=efp_user
 DB_PASSWORD=strongpassword
-SECRET_KEY=your_generated_secret_key_here
+SECRET_KEY=generate_a_very_secret_key_here
 API_PREFIX=/api
 FLASK_ENV=production
 FLASK_DEBUG=False
-CORS_ORIGINS=https://eternalfusionpavilion.duckdns.org
+
+# AI Agent
+AI_MOCK=false
+OLLAMA_CLOUD_BASE_URL=https://ollama.com
+OLLAMA_CLOUD_API_KEY=your_ollama_cloud_api_key_here
+CHAT_MODEL=deepseek-v4-flash:cloud
 ```
 
-### **2.4 Initialize Database Schema**
+---
+
+## Step 7: Configure Flask Backend
+
+Create the Flask virtual environment and install dependencies:
 
 ```bash
-# Install Python dependencies
 cd /var/www/efp/backend
 python3.14 -m venv venv
 source venv/bin/activate
-python3.14 -m pip install --upgrade pip
+pip install --upgrade pip
 pip install -r requirements.txt
-
-# Initialize database schema
-PGPASSWORD=strongpassword psql -h localhost -U efp_user -d eternal_fusion_pavilion_database -f ../init_db.sql
-
-# Verify database initialization
-PGPASSWORD=strongpassword psql -h localhost -U efp_user -d eternal_fusion_pavilion_database -c "SELECT COUNT(*) FROM locations;"
+deactivate
 ```
 
----
-
-## **Step 3: Configure Duck DNS (Free Domain)**
-
-1. Go to [DuckDNS.org](https://www.duckdns.org/) and log in (free, uses Google/GitHub).
-2. In the subdomain field, enter `eternalfusionpavilion` (creates `eternalfusionpavilion.duckdns.org`).
-3. Set **IP/URL** to your EC2 **Public IPv4 address** (from Step 1.2).
-4. Click **Update IP**. It updates every 5 minutes.
-5. **Verify propagation** (5-10 min):
-   ```bash
-   dig eternalfusionpavilion.duckdns.org
-   # Or use online tool: https://dnschecker.org
-   ```
-   Should resolve to your EC2 IP.
-
-**Note**: If you stop/start EC2, IP changes unless using Elastic IP (recommended, free).
-
----
-
-## **Step 4: Configure Backend Services**
-
-Set up Gunicorn and systemd for the Flask application.
-
-### **4.1 Create Gunicorn Service**
-
-Create the log directory (the service config references log files under `/var/log/efp/`):
-
-```bash
-sudo mkdir -p /var/log/efp
-sudo chown ec2-user:nginx /var/log/efp
-```
-
-Create the service file:
+Create the Gunicorn systemd service:
 
 ```bash
 sudo nano /etc/systemd/system/efp-backend.service
@@ -210,7 +256,7 @@ Add:
 
 ```ini
 [Unit]
-Description=Eternal Fusion Pavilion Backend
+Description=Eternal Fusion Pavilion Flask Backend
 After=network.target postgresql.service
 
 [Service]
@@ -219,11 +265,9 @@ Group=nginx
 WorkingDirectory=/var/www/efp/backend
 EnvironmentFile=/var/www/efp/backend/.env
 ExecStart=/var/www/efp/backend/venv/bin/gunicorn \
-          --workers 2 \
+          --workers 3 \
           --bind 127.0.0.1:5000 \
           --timeout 120 \
-          --access-logfile /var/log/efp/efp-backend-access.log \
-          --error-logfile /var/log/efp/efp-backend-error.log \
           "app:create_app()"
 Restart=always
 RestartSec=10
@@ -232,35 +276,143 @@ RestartSec=10
 WantedBy=multi-user.target
 ```
 
-### **4.2 Build Frontend Application**
+---
+
+## Step 8: Install Ollama and Configure AI Agent
+
+### 8.1 Install Ollama
 
 ```bash
-# Build React app
-cd /var/www/efp/frontend
-npm install
-npm run build
+curl -fsSL https://ollama.com/install.sh | sh
+```
 
-# Set permissions for Nginx
-sudo chown -R nginx:nginx /var/www/efp/frontend/dist
-sudo chmod -R 755 /var/www/efp/frontend/dist
+Pull the embedding model:
+
+```bash
+ollama pull qwen3-embedding:0.6b
+```
+
+Verify it is available:
+
+```bash
+ollama list
+```
+
+You should see `qwen3-embedding:0.6b` in the list.
+
+### 8.2 Configure AI Agent Virtual Environment
+
+Create a separate virtual environment for the AI agent:
+
+```bash
+cd /var/www/efp/backend/ai_agent
+python3.14 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+deactivate
+```
+
+### 8.3 Ingest the Knowledge Base
+
+```bash
+cd /var/www/efp/backend/ai_agent
+source venv/bin/activate
+python -m rag.ingest_knowledge
+```
+
+This should report "Ingested 35 documents into efp_knowledge_chunks."
+
+Verify:
+
+```bash
+PGPASSWORD=strongpassword psql -h localhost -U efp_user -d eternal_fusion_pavilion_database -c "SELECT COUNT(*) FROM efp_knowledge_chunks;"
+```
+
+Should return 35.
+
+### 8.4 Create AI Agent systemd Service
+
+```bash
+sudo nano /etc/systemd/system/efp-ai-agent.service
+```
+
+Add:
+
+```ini
+[Unit]
+Description=Eternal Fusion Pavilion AI Agent (FastAPI)
+After=network.target postgresql.service
+
+[Service]
+User=ec2-user
+Group=nginx
+WorkingDirectory=/var/www/efp/backend/ai_agent
+EnvironmentFile=/var/www/efp/backend/.env
+ExecStart=/var/www/efp/backend/ai_agent/venv/bin/python main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
 ```
 
 ---
 
-## **Step 5: Configure Nginx with SSL (Certbot/Let's Encrypt)**
-
-### **5.1 Configure Nginx (HTTP only before SSL)**
+## Step 9: Build Frontend
 
 ```bash
-# Stop and clean default Nginx
-sudo systemctl stop nginx
-sudo rm -f /etc/nginx/conf.d/*.conf
+cd /var/www/efp/frontend
+npm install
+npm run build
+```
 
-# Create main Nginx configuration
+Set permissions for Nginx:
+
+```bash
+sudo chown -R ec2-user:nginx /var/www/efp/frontend/dist
+sudo find /var/www/efp/frontend/dist -type d -exec chmod 755 {} \;
+sudo find /var/www/efp/frontend/dist -type f -exec chmod 644 {} \;
+```
+
+---
+
+## Step 10: Configure DuckDNS (Free Domain)
+
+1. Go to [DuckDNS.org](https://www.duckdns.org/) and log in (free, uses
+   Google/GitHub).
+
+2. In the subdomain field, enter `eternalfusionpavilion` (creates
+   `eternalfusionpavilion.duckdns.org`).
+
+3. Set **IP/URL** to your EC2 **Public IPv4 address** (from Step 1).
+
+4. Click **Update IP**. It updates every 5 minutes.
+
+5. Verify propagation (5-10 min):
+
+```bash
+dig eternalfusionpavilion.duckdns.org
+```
+
+Should resolve to your EC2 IP.
+
+Note: If you stop/start EC2, the IP changes unless using an Elastic IP
+(recommended, free under AWS Free Tier).
+
+---
+
+## Step 11: Configure Nginx
+
+Remove the default config and create the EFP config (HTTP only first;
+Certbot will add HTTPS later):
+
+```bash
+sudo rm -f /etc/nginx/conf.d/default.conf
 sudo nano /etc/nginx/conf.d/efp.conf
 ```
 
-Add (HTTP-only; Certbot will add HTTPS later):
+Add:
 
 ```nginx
 server {
@@ -277,23 +429,37 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # API proxy
+    # AI Agent proxy (must come before /api/ to avoid being swallowed)
+    location /api/ai/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # SSE support: disable buffering, increase timeout
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 10s;
+    }
+
+    # Flask API proxy
     location /api/ {
         proxy_pass http://127.0.0.1:5000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_buffering off;
     }
 
-    # Static cache
+    # Static file cache
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
 
-    # Security
+    # Security headers
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
@@ -308,78 +474,257 @@ sudo systemctl start nginx
 sudo systemctl enable nginx
 ```
 
-> **Why HTTP-only first?**  
-> This avoids the “cannot load certificate … no such file or directory” error. We don’t reference any `/etc/letsencrypt/live/...` files until Certbot has actually created them.
-
-### **5.2 Obtain & Install Let's Encrypt SSL (two-step Certbot run)**
-
-```bash
-# 1) First run WITHOUT --redirect (more reliable)
-sudo certbot --nginx -d eternalfusionpavilion.duckdns.org --email youremail@address.com --agree-tos
-
-# 2) Then run again WITH --redirect to force HTTP -> HTTPS
-sudo certbot --nginx -d eternalfusionpavilion.duckdns.org --email youremail@address.com --agree-tos --redirect
-
-# Test renewal
-sudo certbot renew --dry-run
-
-# Enable auto-renewal
-sudo systemctl enable certbot-renew.timer
-sudo systemctl start certbot-renew.timer
-```
-
-- The **first** command obtains the certificate and lets Certbot update your Nginx config.
-- The **second** command adds a permanent HTTP → HTTPS redirect.  
-  You found that running the `--redirect` variant *first* sometimes failed (likely timeout), so this 2-step flow is safer.
+If you get a `server_names_hash_bucket_size` error, edit
+`/etc/nginx/nginx.conf`, uncomment `server_names_hash_bucket_size 64;`
+inside the `http { }` block and change it to `128;`. Then re-run
+`sudo nginx -t`.
 
 ---
 
-## **Step 6: Launch and Test Application**
+## Step 12: Obtain SSL Certificate (Certbot / Let's Encrypt)
 
-### **6.1 Start All Services**
+Run Certbot in two steps for reliability:
 
 ```bash
-# Reload systemd & start backend
+# Step 1: Obtain the certificate (without redirect)
+sudo certbot --nginx -d eternalfusionpavilion.duckdns.org --email youremail@address.com --agree-tos
+
+# Step 2: Add the HTTP -> HTTPS redirect
+sudo certbot --nginx -d eternalfusionpavilion.duckdns.org --email youremail@address.com --agree-tos --redirect
+```
+
+Test auto-renewal:
+
+```bash
+sudo certbot renew --dry-run
+```
+
+Enable the auto-renewal timer:
+
+```bash
+sudo systemctl enable certbot.timer
+sudo systemctl start certbot.timer
+```
+
+Verify the timer is active:
+
+```bash
+sudo systemctl status certbot.timer
+```
+
+Should show `active (waiting)`.
+
+---
+
+## Step 13: Start All Services
+
+Reload systemd and start all services:
+
+```bash
 sudo systemctl daemon-reload
+
+# Start Flask backend
 sudo systemctl enable efp-backend
 sudo systemctl start efp-backend
 
-# Test & start Nginx
+# Start AI agent
+sudo systemctl enable efp-ai-agent
+sudo systemctl start efp-ai-agent
+
+# Restart Nginx to pick up SSL config
 sudo nginx -t
-sudo systemctl start nginx
-sudo systemctl enable nginx
+sudo systemctl restart nginx
 ```
 
-### **6.2 Verify Services**
+---
+
+## Step 14: Verify the Deployment
+
+### 14.1 Check Service Status
 
 ```bash
-sudo systemctl status postgresql efp-backend nginx firewalld
-PGPASSWORD=strongpassword psql -h localhost -U efp_user -d eternal_fusion_pavilion_database -c "SELECT version();"
-curl http://127.0.0.1:5000/api/health  # Backend health
-curl -k https://localhost  # Local HTTPS
+sudo systemctl status efp-backend efp-ai-agent nginx postgresql
 ```
 
-### **6.3 Test Full App (Browser)**
+All should show `active (running)`.
 
-1. Wait 5-10 min for DNS/SSL propagation.
-2. Visit: **https://eternalfusionpavilion.duckdns.org**
-3. Test API: **https://eternalfusionpavilion.duckdns.org/api/health**
-
-### **6.4 Monitor Logs**
+### 14.2 Check Health Endpoints
 
 ```bash
+# Flask backend
+curl http://127.0.0.1:5000/api/health
+
+# AI agent
+curl http://127.0.0.1:8000/api/ai/health
+```
+
+The AI agent health check should return:
+
+```json
+{
+  "service": "ai_agent",
+  "status": "healthy",
+  "pgvector": "0.8.6",
+  "knowledge_chunks": 35,
+  "database": "connected"
+}
+```
+
+### 14.3 Test the Full Application
+
+Wait 5-10 minutes for DNS/SSL propagation, then visit:
+
+- **Main site**: https://eternalfusionpavilion.duckdns.org
+- **Flask health**: https://eternalfusionpavilion.duckdns.org/api/health
+- **AI agent health**: https://eternalfusionpavilion.duckdns.org/api/ai/health
+- **AI agent chat** (test query):
+
+```bash
+curl -X POST https://eternalfusionpavilion.duckdns.org/api/ai/graph \
+  -H "Content-Type: application/json" \
+  -d '{"question":"How much is the A5 Wagyu Ribeye?"}'
+```
+
+The AI agent should respond with the correct price ($165.00).
+
+### 14.4 Test the Concierge Chat Widget
+
+Open https://eternalfusionpavilion.duckdns.org in a browser. The floating
+concierge chat button should appear in the bottom-right corner. Click it
+and type a question to verify the full stack is working.
+
+---
+
+## Service Management and Troubleshooting
+
+### Managing Services
+
+```bash
+# Check status of all services
+sudo systemctl status efp-backend efp-ai-agent nginx postgresql
+
+# Restart individual services
+sudo systemctl restart efp-backend
+sudo systemctl restart efp-ai-agent
+sudo systemctl restart nginx
+
+# View logs
 sudo journalctl -u efp-backend -f
-sudo tail -f /var/log/nginx/access.log
+sudo journalctl -u efp-ai-agent -f
 sudo tail -f /var/log/nginx/error.log
-sudo tail -f /var/log/efp/efp-backend-*.log
 ```
 
-**Troubleshooting**:
-- **DNS?** Check `dig eternalfusionpavilion.duckdns.org`
-- **SSL?** `sudo certbot certificates`
-- **IP Changed?** Update DuckDNS & re-run Certbot.
-- **Logs show errors?** Check permissions, .env, DB connection.
+### Common Issues
 
-Your app is live at https://eternalfusionpavilion.duckdns.org (Free Tier). Update DuckDNS IP if EC2 restarts. For production, secure DB (not 0.0.0.0/0), use Elastic IP, monitor Free Tier usage.
+**1. Nginx 502 Bad Gateway**
+
+The backend or AI agent is not running. Check:
+
+```bash
+sudo systemctl status efp-backend
+sudo systemctl status efp-ai-agent
+```
+
+If a service failed, check its logs:
+
+```bash
+sudo journalctl -u efp-backend --no-pager -n 50
+sudo journalctl -u efp-ai-agent --no-pager -n 50
+```
+
+**2. AI Agent returns 503 (LLM unavailable)**
+
+The Ollama Cloud model may be temporarily overloaded. Wait a moment and
+retry. Verify your `OLLAMA_CLOUD_API_KEY` in `/var/www/efp/backend/.env`
+is correct.
+
+**3. AI Agent health shows "pgvector: not installed"**
+
+The pgvector extension was not created in the database. Run:
+
+```bash
+sudo -u postgres psql -d eternal_fusion_pavilion_database -c "CREATE EXTENSION IF NOT EXISTS vector;"
+sudo systemctl restart efp-ai-agent
+```
+
+**4. AI Agent health shows "knowledge_chunks: 0"**
+
+The knowledge base was not ingested. Run:
+
+```bash
+cd /var/www/efp/backend/ai_agent
+source venv/bin/activate
+python -m rag.ingest_knowledge
+```
+
+**5. Permission Denied Errors (Nginx 5xx)**
+
+```bash
+sudo chown -R ec2-user:nginx /var/www/efp/frontend/dist
+sudo find /var/www/efp/frontend/dist -type d -exec chmod 755 {} \;
+sudo find /var/www/efp/frontend/dist -type f -exec chmod 644 {} \;
+```
+
+**6. Ollama not running**
+
+```bash
+systemctl status ollama
+sudo systemctl start ollama
+sudo systemctl enable ollama
+ollama list
+```
+
+**7. DuckDNS IP changed after EC2 restart**
+
+1. Go to DuckDNS.org and update the IP to the new public IPv4 address.
+2. Re-run Certbot:
+   ```bash
+   sudo certbot --nginx -d eternalfusionpavilion.duckdns.org --email youremail@address.com --agree-tos --redirect
+   ```
+
+For a stable IP, use an Elastic IP (free under AWS Free Tier).
+
+**8. certbot.timer does not exist**
+
+On Amazon Linux 2023, the timer unit name may differ. Check:
+
+```bash
+systemctl list-timers | grep certbot
+```
+
+If the timer exists under a different name, use that. If no timer
+exists, Certbot installs a cron job instead. Check:
+
+```bash
+ls /etc/cron.d/ | grep certbot
+```
+
+---
+
+## Architecture Summary
+
+```
+Internet
+    |
+    v
+[Nginx :80/:443] -- SSL via Certbot/Let's Encrypt
+    |
+    +-- / (static files) --> /var/www/efp/frontend/dist (React build)
+    |
+    +-- /api/ai/ --> 127.0.0.1:8000 (FastAPI AI Agent, uvicorn)
+    |                   |
+    |                   +-- Local Ollama :11434 (embeddings)
+    |                   +-- Ollama Cloud (chat LLM)
+    |                   +-- PostgreSQL (pgvector, guest_ai_memory)
+    |
+    +-- /api/ --> 127.0.0.1:5000 (Flask Backend, Gunicorn)
+                     |
+                     +-- PostgreSQL (reservations, customers, etc.)
+```
+
+Three systemd services:
+- `efp-backend.service` - Flask + Gunicorn (port 5000)
+- `efp-ai-agent.service` - FastAPI + uvicorn (port 8000)
+- `ollama.service` - Local Ollama (port 11434, auto-installed)
 
 ---

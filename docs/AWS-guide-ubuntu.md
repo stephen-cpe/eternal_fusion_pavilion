@@ -502,8 +502,8 @@ sudo certbot renew --dry-run
 Enable the renewal timer:
 
 ```bash
-sudo systemctl enable certbot-renew.timer
-sudo systemctl start certbot-renew.timer
+sudo systemctl enable certbot.timer
+sudo systemctl start certbot.timer
 ```
 
 ---
