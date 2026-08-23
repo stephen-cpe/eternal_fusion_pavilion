@@ -215,7 +215,16 @@ export default function ConciergeChat() {
           onEscalation: (reason) => {
             setMessages((prev) => [...prev, { role: "assistant", type: "escalation", text: reason }]);
           },
-          onDone: () => {
+          onDone: (data) => {
+            if (data && data.interrupted && data.interrupt_data) {
+              // Re-interrupt during resume — show a new confirmation card.
+              setPendingConfirmation({
+                threadId: data.thread_id || pendingConfirmation.threadId,
+                details: data.interrupt_data.details || {},
+                message: data.interrupt_data.message || "Please confirm your booking.",
+              });
+              return;
+            }
             if (fullAnswer) {
               setMessages((prev) => [...prev, { role: "assistant", text: fullAnswer }]);
             }

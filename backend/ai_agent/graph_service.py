@@ -177,16 +177,22 @@ class GraphService:
                     for t in graph_state.tasks
                 )
             ):
-                interrupt_value = graph_state.tasks[0].interrupts[0].value
-                latency = int((time.time() - start) * 1000)
-                yield self._sse_frame({
-                    "interrupted": True,
-                    "interrupt_data": interrupt_value,
-                    "thread_id": thread_id,
-                    "latency_ms": latency,
-                    "done": True,
-                })
-                return
+                # The graph is paused at an interrupt — emit the interrupt frame.
+                interrupt_task = next(
+                    (t for t in graph_state.tasks if hasattr(t, "interrupts") and t.interrupts),
+                    None,
+                )
+                if interrupt_task:
+                    interrupt_value = interrupt_task.interrupts[0].value
+                    latency = int((time.time() - start) * 1000)
+                    yield self._sse_frame({
+                        "interrupted": True,
+                        "interrupt_data": interrupt_value,
+                        "thread_id": thread_id,
+                        "latency_ms": latency,
+                        "done": True,
+                    })
+                    return
 
             if final_answer:
                 yield self._sse_frame({"token": final_answer})
@@ -310,17 +316,22 @@ class GraphService:
                 )
             ):
                 # The graph is paused at an interrupt — emit the interrupt frame.
-                interrupt_value = graph_state.tasks[0].interrupts[0].value
-                latency = int((time.time() - start) * 1000)
-                logger.info("Graph interrupted during stream (thread=%s), emitting interrupt frame", tid)
-                yield self._sse_frame({
-                    "interrupted": True,
-                    "interrupt_data": interrupt_value,
-                    "thread_id": tid,
-                    "latency_ms": latency,
-                    "done": True,
-                })
-                return
+                interrupt_task = next(
+                    (t for t in graph_state.tasks if hasattr(t, "interrupts") and t.interrupts),
+                    None,
+                )
+                if interrupt_task:
+                    interrupt_value = interrupt_task.interrupts[0].value
+                    latency = int((time.time() - start) * 1000)
+                    logger.info("Graph interrupted during stream (thread=%s), emitting interrupt frame", tid)
+                    yield self._sse_frame({
+                        "interrupted": True,
+                        "interrupt_data": interrupt_value,
+                        "thread_id": tid,
+                        "latency_ms": latency,
+                        "done": True,
+                    })
+                    return
 
             # Emit the final answer as a token frame.
             if final_answer:

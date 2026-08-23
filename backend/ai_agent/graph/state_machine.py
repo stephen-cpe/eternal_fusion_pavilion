@@ -114,10 +114,10 @@ def memory_retrieve_node(state: AgentState) -> dict[str, Any]:
 def triage_node(state: AgentState) -> dict[str, Any]:
     """Scope check: is this question in scope for EFP?
 
-    Note: even if this returns out-of-scope, route_after_triage may override
-    the routing to RAG for continuation turns (existing messages in the
-    thread) or personal questions from known guests (with stored memories).
-    In those cases the out-of-scope answer is cleared so it doesn't leak.
+    The triage node performs keyword-overlap scope check only. The routing
+    decision (including continuation-turn and memory-based overrides) is
+    handled by route_after_triage. This keeps the logic in one place and
+    avoids redundancy.
     """
     question = state["question"]
     knowledge_texts = load_knowledge_texts()
@@ -126,26 +126,9 @@ def triage_node(state: AgentState) -> dict[str, Any]:
     if in_scope:
         return {"in_scope": True, "source": "rag"}
 
-    # Check if this is a continuation turn — route_after_triage will override
-    # to RAG, so we should not set the out-of-scope redirect answer.
-    existing_messages = state.get("messages", [])
-    if existing_messages and len(existing_messages) >= 2:
-        logger.info("[triage] out-of-scope but continuation turn — will route to RAG")
-        return {"in_scope": False, "source": "rag"}
-
-    # Check if the guest has memories and the question is personal.
-    memories = state.get("guest_memories", [])
-    if memories:
-        question_lower = question.lower()
-        personal_indicators = [
-            "my", "i ", "me", "i'm", "i am", "dietary", "allergy", "allergic",
-            "preference", "prefer", "remember", "know", "profile", "name", "email",
-        ]
-        if any(ind in question_lower for ind in personal_indicators):
-            logger.info("[triage] out-of-scope but personal question + memories — will route to RAG")
-            return {"in_scope": False, "source": "rag"}
-
-    # Genuinely out of scope.
+    # Genuinely out of scope (keyword overlap failed).
+    # route_after_triage may still override this to RAG for continuation
+    # turns or personal questions from known guests.
     out_of_scope_answer = (
         "I'm the Eternal Fusion Pavilion concierge and can help "
         "with our menu, our story, our locations, and reservations. "
@@ -224,9 +207,13 @@ def rag_node(state: AgentState) -> dict[str, Any]:
         logger.info("[rag] first turn: built %d messages from scratch", len(messages))
 
     # Reset per-turn fields so previous turn's tool state doesn't leak.
+    # Also set in_scope=True since reaching rag_node means we're treating
+    # this question as in-scope (whether by keyword match or override).
     return {
         "context": context,
         "messages": messages,
+        "in_scope": True,
+        "source": "rag",
         "iteration_count": 0,
         "tool_calls": [],
         "tool_results": [],
