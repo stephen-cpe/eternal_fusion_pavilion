@@ -3,6 +3,8 @@ Room Assignment Algorithm
 Implements weighted-random room selection based on capacity constraints
 """
 import random
+import secrets
+import string
 from typing import Optional, List, Dict, Tuple
 from datetime import datetime, timedelta
 
@@ -273,10 +275,12 @@ def generate_reservation_number(location_code: str) -> str:
     """
     Generate a unique reservation number in format: LOC-XXXXX
     Example: JPN-A43C7
+
+    Uses secrets.choice (CSPRNG) so reservation numbers are not predictable.
+    Callers should retry on DB IntegrityError / unique-collision.
     """
-    import string
     chars = string.ascii_uppercase + string.digits
-    random_part = ''.join(random.choices(chars, k=5))
+    random_part = ''.join(secrets.choice(chars) for _ in range(5))
     return f"{location_code}-{random_part}"
 
 

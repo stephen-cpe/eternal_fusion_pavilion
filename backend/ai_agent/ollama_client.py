@@ -1,8 +1,10 @@
 """Ollama chat client — lifted from notebook-project, adapted for EFP.
 
-Wraps Ollama Cloud's API for the chat model (gemma4:31b-cloud by default).
-Thinking is enabled server-side via the `<|think|>` system-prompt token
-(Gemma 4 built-in) when ENABLE_THINKING=true.
+Wraps Ollama Cloud's API for the chat model (configured via CHAT_MODEL env
+var; defaults to deepseek-v4-flash:cloud). Thinking is enabled server-side
+via the `<|think|>` system-prompt token when ENABLE_THINKING=true. Models
+that understand the token produce internal reasoning; others ignore it
+harmlessly.
 
 Behavior:
 - AI_MOCK=true: deterministic mock returns canned text / word chunks.
@@ -25,9 +27,13 @@ from config import Config, get_config
 
 logger = logging.getLogger(__name__)
 
-# Regex to strip Gemma 4 thinking blocks from model output.
-# Format: <|channel|thought\n [reasoning] <channel|> [final answer]
-_THINK_BLOCK_RE = re.compile(r"<\|channel\|thought\s*\n?.*?<\|?channel\|>", re.DOTALL)
+# Regex to strip thinking blocks from model output.
+# Format: <|channel|thought\n [reasoning] <|channel|> [final answer]
+# The closing token is exactly <|channel|> (the first pipe is NOT optional —
+# making it optional over-matches the bare <channel|> token).
+# If a different model emits thinking in a different format, add its pattern
+# here (or in a list of patterns) so extract_final_answer stays model-agnostic.
+_THINK_BLOCK_RE = re.compile(r"<\|channel\|thought\s*\n?.*?<\|channel\|>", re.DOTALL)
 
 
 class AIModelUnavailableError(RuntimeError):
@@ -39,11 +45,16 @@ class AITimeoutError(RuntimeError):
 
 
 def extract_final_answer(raw: str) -> str:
-    """Strip Gemma 4 thinking blocks, returning only the final answer text."""
+    """Strip thinking blocks from model output, returning only the final answer.
+
+    If the thinking block consumed the entire output, return an empty string
+    rather than re-leaking the raw thinking text (the previous fallback to
+    `raw.strip()` would surface <|channel|thought...|> to the caller).
+    """
     if not raw:
         return ""
     cleaned = _THINK_BLOCK_RE.sub("", raw).strip()
-    return cleaned if cleaned else raw.strip()
+    return cleaned
 
 
 def build_prompt(
@@ -55,7 +66,8 @@ def build_prompt(
     """Assemble the message list for the LLM.
 
     When enable_thinking is True, the <|think|> token is prepended to the
-    system prompt (Gemma 4's mechanism for enabling internal reasoning).
+    system prompt. Models that recognize it (e.g. Gemma, DeepSeek) produce
+    internal reasoning; other models ignore the unknown token harmlessly.
     """
     system_content = system
     if enable_thinking:

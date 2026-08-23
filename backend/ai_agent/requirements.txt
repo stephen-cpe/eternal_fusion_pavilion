@@ -7,7 +7,7 @@
 
 # --- Agent / LLM orchestration ---
 langgraph>=1.2.11
-langgraph-checkpoint-postgres>=2.0.0
+langgraph-checkpoint-postgres>=3.1.2
 langchain-ollama>=1.1.0
 langchain-text-splitters>=1.1.2
 
@@ -20,7 +20,7 @@ pydantic>=2.13.4
 # --- Database (independent engine; same Postgres DB as Flask app) ---
 SQLAlchemy>=2.0.52
 psycopg2-binary>=2.9.12
-psycopg[binary]>=3.2.0
+psycopg[binary]>=3.3.4
 
 # --- Config / env ---
 python-dotenv>=1.2.3

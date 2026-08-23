@@ -31,7 +31,9 @@ def update_customer(customer_id):
     name = data.get('name', '').strip()
     email = data.get('email', '').strip()
     phone = data.get('phone', '').strip()
-    newsletter_signup = data.get('newsletter_signup', False)
+    # Only treat newsletter_signup as provided when the key is actually present,
+    # so unrelated profile edits don't silently reset the subscription preference.
+    newsletter_signup = data.get('newsletter_signup') if 'newsletter_signup' in data else None
 
     if not name or not email:
         return jsonify({'error': 'Name and email are required'}), 400
@@ -62,7 +64,11 @@ def update_customer(customer_id):
         customer.name = name
         customer.email = email
         customer.phone = phone
-        customer.newsletter_signup = newsletter_signup
+        # Only update newsletter_signup when the caller explicitly provided it;
+        # otherwise preserve the existing value (fixes silent unsubscribe on
+        # name/email/phone-only edits).
+        if newsletter_signup is not None:
+            customer.newsletter_signup = bool(newsletter_signup)
 
         # Log the audit
         log_audit(

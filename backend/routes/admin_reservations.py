@@ -495,8 +495,15 @@ def create_admin_reservation():
              return jsonify({'error': 'Invalid location selected'}), 400
         location_code = location.code
 
-         # Generate reservation number (utils)
-        reservation_number = generate_reservation_number(location_code)
+         # Generate reservation number (utils) with collision retry
+        for _attempt in range(3):
+            reservation_number = generate_reservation_number(location_code)
+            if not db.session.query(Reservation).filter_by(reservation_number=reservation_number).first():
+                break
+        else:
+            db.session.rollback()
+            if conn: release_connection(conn)
+            return jsonify({'error': 'Could not generate a unique reservation number. Please retry.'}), 500
 
         # Create reservation object
         new_reservation = Reservation(

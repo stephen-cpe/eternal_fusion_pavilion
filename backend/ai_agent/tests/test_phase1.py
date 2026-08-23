@@ -115,7 +115,7 @@ def test_build_prompt_thinking_token_prepended():
 
 
 def test_extract_final_answer_strips_thinking_blocks():
-    """Gemma 4 thinking blocks are stripped from the final answer."""
+    """Thinking blocks are stripped from the final answer."""
     from ollama_client import extract_final_answer
     raw = "<|channel|thought\n Let me think about this. <|channel|> The wagyu is $165."
     assert extract_final_answer(raw) == "The wagyu is $165."

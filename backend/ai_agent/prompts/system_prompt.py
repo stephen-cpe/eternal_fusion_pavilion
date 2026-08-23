@@ -4,9 +4,9 @@ Grounded in the actual EFP About page + business rules. Enforces the
 'human-sounding' requirement and the escalation rules (party >12, etc.).
 
 Note on thinking: the <|think|> token is prepended by build_prompt() when
-ENABLE_THINKING=true. This is Gemma 4's mechanism. For other models
-(deepseek, gpt-oss, nemotron), the token is harmless — it's treated as
-an unknown token and ignored. If a model's output includes thinking
+ENABLE_THINKING=true. Models that recognize the token (e.g. Gemma,
+DeepSeek) produce internal reasoning; other models treat it as an unknown
+token and ignore it harmlessly. If a model's output includes thinking
 blocks in a different format, add the stripping pattern to
 ollama_client.extract_final_answer().
 """

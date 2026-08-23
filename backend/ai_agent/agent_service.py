@@ -95,6 +95,10 @@ class AgentService:
                 return {"answer": answer, "tool_calls": all_tool_calls, "latency_ms": latency, "in_scope": True}
 
             # Execute each tool call and append results.
+            # Append the assistant tool-call message ONCE with the full
+            # tool_calls array (Ollama expects a single assistant message
+            # carrying all tool calls, followed by one tool message per call).
+            messages.append({"role": "assistant", "content": response["content"], "tool_calls": response["tool_calls"]})
             for tc in response["tool_calls"]:
                 func_info = tc.get("function", tc)
                 tool_name = func_info.get("name", "")
@@ -111,8 +115,8 @@ class AgentService:
                 result = execute_tool(tool_name, tool_args)
                 all_tool_calls.append({"name": tool_name, "arguments": tool_args, "result": result})
 
-                # Append the assistant's tool-call message + the tool result.
-                messages.append({"role": "assistant", "content": response["content"], "tool_calls": [tc]})
+                # Append the tool result message (assistant message already
+                # appended once before the loop).
                 messages.append({"role": "tool", "name": tool_name, "content": json.dumps(result)})
 
         # Exceeded max iterations — return what we have.
@@ -180,6 +184,10 @@ class AgentService:
                 return
 
             # Execute tool calls.
+            # Append the assistant tool-call message ONCE with the full
+            # tool_calls array (Ollama expects a single assistant message
+            # carrying all tool calls, followed by one tool message per call).
+            messages.append({"role": "assistant", "content": response["content"], "tool_calls": response["tool_calls"]})
             for tc in response["tool_calls"]:
                 func_info = tc.get("function", tc)
                 tool_name = func_info.get("name", "")
@@ -201,7 +209,8 @@ class AgentService:
                 # Notify the client of the tool result.
                 yield self._sse_frame({"tool_result": {"name": tool_name, "result": result}})
 
-                messages.append({"role": "assistant", "content": response["content"], "tool_calls": [tc]})
+                # Append the tool result message (assistant message already
+                # appended once before the loop).
                 messages.append({"role": "tool", "name": tool_name, "content": _json.dumps(result)})
 
         # Max iterations reached.

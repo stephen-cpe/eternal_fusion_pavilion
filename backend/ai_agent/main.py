@@ -88,14 +88,16 @@ app.include_router(graph_router, prefix="/api/ai")
 
 # Global exception handler — log the full traceback and return it as JSON
 # so 500s are never silent. Critical for debugging route-level import issues.
+# The traceback is only included in the response body when AI_DEBUG=true to
+# avoid leaking server internals (file paths, env vars) to clients in prod.
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     tb = traceback.format_exc()
     logger.error("Unhandled exception on %s %s:\n%s", request.method, request.url.path, tb)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": str(exc), "type": type(exc).__name__, "traceback": tb},
-    )
+    body = {"detail": str(exc), "type": type(exc).__name__}
+    if os.environ.get("AI_DEBUG") == "true":
+        body["traceback"] = tb
+    return JSONResponse(status_code=500, content=body)
 
 
 @app.get("/api/ai/health")

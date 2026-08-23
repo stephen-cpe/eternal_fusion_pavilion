@@ -86,25 +86,27 @@ def check_groundedness(answer: str, context: str, threshold: float = 0.5) -> tup
 
     If the substantive-word overlap is below threshold, append a verification
     disclaimer. Returns (is_grounded, result_text).
+
+    An empty answer or one with no meaningful (non-stopword) words is NOT
+    considered grounded — the previous behavior of returning True for those
+    cases silently endorsed empty/gibberish responses.
     """
+    disclaimer = (
+        "\n\n*Note: This answer could not be verified against the "
+        "provided sources. Please verify independently.*"
+    )
     if not answer:
-        return True, answer
+        return False, answer + disclaimer
     if not context:
-        return False, answer + (
-            "\n\n*Note: This answer could not be verified against the "
-            "provided sources. Please verify independently.*"
-        )
+        return False, answer + disclaimer
 
     answer_words = _extract_meaningful_words(answer)
     if not answer_words:
-        return True, answer
+        return False, answer + disclaimer
 
     context_words = _extract_meaningful_words(context)
     if not context_words:
-        return False, answer + (
-            "\n\n*Note: This answer could not be verified against the "
-            "provided sources. Please verify independently.*"
-        )
+        return False, answer + disclaimer
 
     overlap = answer_words & context_words
     fraction = len(overlap) / len(answer_words)

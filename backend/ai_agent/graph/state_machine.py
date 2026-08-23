@@ -338,6 +338,13 @@ def tools_node(state: AgentState) -> dict[str, Any]:
     tool_calls = state.get("tool_calls", [])
     existing_results = list(state.get("tool_results", []))
 
+    # Append the assistant tool-call message ONCE with the full tool_calls
+    # array (Ollama expects a single assistant message carrying all tool
+    # calls, followed by one tool message per call — not one assistant
+    # message per call, which corrupts conversation history on multi-tool
+    # turns).
+    messages.append({"role": "assistant", "content": state.get("answer", ""), "tool_calls": tool_calls})
+
     for tc in tool_calls:
         func_info = tc.get("function", tc)
         tool_name = func_info.get("name", "")
@@ -378,7 +385,6 @@ def tools_node(state: AgentState) -> dict[str, Any]:
                     "cancelled": True,
                 }
                 existing_results.append({"name": tool_name, "arguments": tool_args, "result": result})
-                messages.append({"role": "assistant", "content": state.get("answer", ""), "tool_calls": [tc]})
                 messages.append({"role": "tool", "name": tool_name, "content": json.dumps(result)})
                 logger.info("[tools] reservation cancelled by user")
                 return {"messages": messages, "tool_results": existing_results, "tool_calls": []}
@@ -391,8 +397,8 @@ def tools_node(state: AgentState) -> dict[str, Any]:
 
         existing_results.append({"name": tool_name, "arguments": tool_args, "result": result})
 
-        # Append assistant tool-call message + tool result message.
-        messages.append({"role": "assistant", "content": state.get("answer", ""), "tool_calls": [tc]})
+        # Append the tool result message (the assistant tool-call message
+        # was already appended once before the loop).
         messages.append({"role": "tool", "name": tool_name, "content": json.dumps(result)})
 
     return {"messages": messages, "tool_results": existing_results, "tool_calls": []}

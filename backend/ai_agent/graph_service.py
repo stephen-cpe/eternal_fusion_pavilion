@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 from collections.abc import Generator
 from typing import Any
 
@@ -34,7 +35,7 @@ class GraphService:
         can display them and call resume_graph().
         """
         start = time.time()
-        tid = thread_id or f"efp-{int(start * 1000)}"
+        tid = thread_id or uuid.uuid4().hex
         initial_state: AgentState = {
             "question": question,
             "guest_identifier": guest_identifier,
@@ -225,7 +226,7 @@ class GraphService:
             thread_id: Conversation thread ID for multi-turn continuity.
         """
         start = time.time()
-        tid = thread_id or f"efp-{int(start * 1000)}"
+        tid = thread_id or uuid.uuid4().hex
         initial_state: AgentState = {
             "question": question,
             "guest_identifier": guest_identifier,

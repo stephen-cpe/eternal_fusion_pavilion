@@ -154,9 +154,15 @@ class ChatService:
                     len(raw_answer), (time.time() - t0) * 1000)
 
         # 4. Groundedness check (append disclaimer as final token if needed).
-        _, answer = check_groundedness(raw_answer, context)
-        if answer != raw_answer:
-            disclaimer = answer[len(raw_answer):]
+        # The stream yielded raw tokens that may include thinking blocks
+        # (<|channel|thought...|>) when ENABLE_THINKING=true and the model
+        # supports thinking. Strip them before the groundedness check so the
+        # overlap calculation isn't skewed by internal reasoning text.
+        from ollama_client import extract_final_answer
+        clean_answer = extract_final_answer(raw_answer)
+        _, answer = check_groundedness(clean_answer, context)
+        if answer != clean_answer:
+            disclaimer = answer[len(clean_answer):]
             yield self._sse_frame({"token": disclaimer})
 
         latency = int((time.time() - start) * 1000)

@@ -170,16 +170,21 @@ def create_reservation():
             return jsonify({'error': 'Invalid location selected'}), 400
         location_code = location.code
 
-        # Generate reservation number (utils)
-        reservation_number = generate_reservation_number(location_code)
-
-        # Find or create customer using ORM
-        customer = db.session.query(Customer).filter_by(email=data['email']).first()
-        if customer:
-            customer.name = data['name']
-            customer.phone = data.get('phone')
-            customer.updated_at = datetime.datetime.now()
+        # Generate reservation number (utils) with collision retry
+        for _attempt in range(3):
+            reservation_number = generate_reservation_number(location_code)
+            if not db.session.query(Reservation).filter_by(reservation_number=reservation_number).first():
+                break
         else:
+            return jsonify({'error': 'Could not generate a unique reservation number. Please retry.'}), 500
+
+        # Find or create customer using ORM.
+        # For an existing customer, use the stored record as-is — a public
+        # booking endpoint must not mutate an existing customer's name/phone,
+        # which would let anyone overwrite a stranger's profile by booking
+        # with their email (IDOR). Profile edits belong to the admin endpoints.
+        customer = db.session.query(Customer).filter_by(email=data['email']).first()
+        if not customer:
             customer = Customer(
                 name=data['name'],
                 email=data['email'],

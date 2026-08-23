@@ -41,13 +41,18 @@ def test_graph_sync_returns_thread_id():
 
 
 def test_graph_sync_generates_thread_id_when_absent():
-    """graph_sync generates a thread_id when none is provided (one-shot mode)."""
+    """graph_sync generates a thread_id when none is provided (one-shot mode).
+
+    The generated id is an unguessable UUID hex string so a malicious client
+    cannot guess another guest's thread_id and hijack their HITL interrupt.
+    """
     from graph_service import GraphService
     service = GraphService()
     result = service.graph_sync("How much is the wagyu?")
     assert "thread_id" in result
-    assert result["thread_id"].startswith("efp-")
-    assert len(result["thread_id"]) > 4
+    # UUID hex is 32 chars, unguessable. Reject the old predictable "efp-<ms>".
+    assert len(result["thread_id"]) >= 16
+    assert not result["thread_id"].startswith("efp-")
 
 
 def test_graph_stream_done_frame_includes_thread_id():
@@ -79,7 +84,9 @@ def test_graph_stream_generates_thread_id_when_absent():
             if payload.get("done"):
                 done_frames.append(payload)
     assert len(done_frames) >= 1
-    assert done_frames[-1]["thread_id"].startswith("efp-")
+    # UUID hex is 32 chars, unguessable. Reject the old predictable "efp-<ms>".
+    assert len(done_frames[-1]["thread_id"]) >= 16
+    assert not done_frames[-1]["thread_id"].startswith("efp-")
 
 
 def test_same_thread_id_preserves_context():
