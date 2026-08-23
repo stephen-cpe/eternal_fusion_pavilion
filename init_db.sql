@@ -85,7 +85,7 @@ CREATE INDEX ix_efp_knowledge_embedding
 -- chat_threads: conversation state for the LangGraph checkpointer (Phase 3+).
 CREATE TABLE chat_threads (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    guest_identifier VARCHAR(255),             -- customer email or anon browser id
+    guest_identifier VARCHAR(255),             -- stable anonymous browser UUID (never personal data)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -94,7 +94,7 @@ CREATE TABLE chat_threads (
 -- memory_type: "semantic" (preferences) | "episodic" (events) | "procedural" (how-to)
 CREATE TABLE guest_ai_memory (
     id SERIAL PRIMARY KEY,
-    guest_identifier VARCHAR(255) NOT NULL,    -- customer email or anon id
+    guest_identifier VARCHAR(255) NOT NULL,    -- stable anonymous browser UUID (never personal data)
     memory_type VARCHAR(20) NOT NULL
         CHECK (memory_type IN ('semantic', 'episodic', 'procedural')),
     content TEXT NOT NULL,                     -- the extracted fact

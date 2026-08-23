@@ -82,13 +82,14 @@ The EFP is a client-server system composed of four main components:
    psycopg2 (connection pool) for database access.
 
 3. **AI Agent Backend (port 8000):** A FastAPI service running a LangGraph
-   state machine with 8 nodes (memory_retrieve, triage, rag, agent, tools,
-   escalation, response, memory_store). Uses local Ollama for embeddings
-   (qwen3-embedding:0.6b, 1024-dim), Ollama Cloud for chat
+   state machine with 9 nodes (memory_retrieve, triage, rag, summarize, agent,
+   tools, escalation, response, memory_store). Uses local Ollama for
+   embeddings (qwen3-embedding:0.6b, 1024-dim), Ollama Cloud for chat
    (deepseek-v4-flash:cloud), pgvector for knowledge retrieval, and HTTP
    tool wrappers that call the Flask reservation API. Maintains an independent
    SQLAlchemy engine pointing at the same Postgres database. Streams responses
-   via SSE (sse-starlette).
+   via SSE (sse-starlette). Uses a Postgres-backed checkpointer
+   (`PostgresSaver`) with an in-memory `MemorySaver` fallback.
 
 4. **Database (PostgreSQL 18 + pgvector):** A single PostgreSQL database
    shared by both backends. The Flask app owns the core tables (locations,
@@ -131,7 +132,8 @@ The system shall provide the following high-level functions:
       locations, name) via long-term memory (guest_ai_memory table + LLM
       fact extraction).
     * Maintain multi-turn conversation continuity within a chat session
-      (LangGraph MemorySaver checkpointer keyed by thread_id).
+      (LangGraph Postgres-backed checkpointer keyed by thread_id, with
+      MemorySaver fallback if Postgres is unavailable).
     * Escalate to a human when a request exceeds its authority (party size
       > 12, soft-block overrides, complaints).
     * Stream responses to the frontend via SSE.
@@ -162,7 +164,7 @@ pages (never in admin). The admin UI components include `AdminNavigation`,
   with React 19, Vite, Tailwind CSS 4, @tanstack/react-query, axios,
   react-toastify, framer-motion, and lucide-react. Vite proxies `/api/ai/*`
   to port 8000 and `/api/*` to port 5000 during development. Testing via
-  Vitest + @testing-library/react (64 tests).
+  Vitest + @testing-library/react (66 tests).
 * **Flask Backend:** Python 3.14+ with Flask 3.1, Flask-Session 0.8,
   Flask-SQLAlchemy 3.1, Flask-Cors 6.0, bcrypt, and psycopg2-binary. Gunicorn
   as the WSGI server in production. Testing via pytest + pytest-flask.
@@ -170,7 +172,7 @@ pages (never in admin). The admin UI components include `AdminNavigation`,
   langchain-ollama, langchain-text-splitters, sse-starlette, SQLAlchemy,
   psycopg2-binary, and python-dotenv. Local Ollama for embeddings
   (qwen3-embedding:0.6b). Ollama Cloud for chat LLM
-  (deepseek-v4-flash:cloud). Testing via pytest (112 tests in mock mode).
+   (deepseek-v4-flash:cloud). Testing via pytest (124 tests in mock mode).
 * **Database:** PostgreSQL 18 with pgvector 0.8.6 extension.
 
 ### 2.5 Design and Implementation Constraints
@@ -370,8 +372,9 @@ See `backend/utils/room_assignment.py`.)
       return reservation details to the frontend as an interrupt frame.
     * The frontend shall display a confirmation card with Confirm and Cancel
       buttons.
-    * The agent shall provide `POST /api/ai/resume` with `{thread_id,
-      confirmed}` to resume the paused graph.
+    * The agent shall provide `POST /api/ai/resume` (non-streaming) and
+      `POST /api/ai/resume/stream` (SSE streaming, the primary frontend path)
+      with `{thread_id, confirmed}` to resume the paused graph.
     * If the user confirms, the graph resumes and executes the reservation.
     * If the user cancels, the graph returns a cancellation result without
       calling the Flask API.
@@ -417,8 +420,13 @@ See `backend/utils/room_assignment.py`.)
       an input box, and streaming token rendering.
 
 * **FR12.2: Streaming**
-    * The widget shall consume SSE from `/api/ai/graph/stream` and render
-      tokens incrementally as they arrive.
+    * The widget shall consume SSE from `/api/ai/graph/stream` and render the
+      final answer as it arrives. The `/graph/stream` endpoint currently emits
+      the complete answer as a single `{"token": final_answer}` frame
+      (node-level `stream_mode="updates"`), not incremental token-by-token
+      streaming. Incremental token streaming is available on the Phase 1
+      `/api/ai/chat/stream` endpoint; enhancing `/graph/stream` to stream
+      tokens incrementally is future work (see Roadmap).
     * The SSE parser must ignore keep-alive pings and non-data lines, tolerate
       malformed JSON, and support AbortController for cancellation.
 
