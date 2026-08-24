@@ -434,4 +434,60 @@
     font-weight: 400;
     font-style: normal;
   }
+
+  /* Chat markdown rendering — scoped to assistant message bubbles.
+     Only targets elements inside .chat-markdown so user messages and
+     other components are unaffected. */
+  .chat-markdown {
+    line-height: 1.6;
+    word-break: break-word;
+  }
+  .chat-markdown p {
+    margin: 0;
+    color: var(--foreground);
+  }
+  .chat-markdown p + p {
+    margin-top: 0.5rem;
+  }
+  .chat-markdown strong {
+    font-weight: 600;
+    color: var(--foreground);
+  }
+  .chat-markdown em {
+    font-style: italic;
+  }
+  .chat-markdown ul,
+  .chat-markdown ol {
+    margin: 0.25rem 0;
+    padding-left: 1.25rem;
+    color: var(--foreground);
+  }
+  .chat-markdown li {
+    margin: 0.15rem 0;
+  }
+  .chat-markdown ul {
+    list-style-type: disc;
+  }
+  .chat-markdown ol {
+    list-style-type: decimal;
+  }
+  .chat-markdown a {
+    color: var(--primary);
+    text-decoration: underline;
+  }
+  .chat-markdown a:hover {
+    color: var(--accent);
+  }
+  .chat-markdown code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--muted);
+    padding: 0.1rem 0.3rem;
+    border-radius: 0.25rem;
+  }
+  .chat-markdown hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 0.5rem 0;
+  }
 }

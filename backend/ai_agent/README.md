@@ -7,8 +7,9 @@ agent for the Eternal Fusion Pavilion. It runs in its **own process** on port
 The agent is autonomous, context-aware, long-memory, and human-sounding. It
 answers guest questions about the menu, founders, locations, and policies via
 RAG; checks availability and makes reservations by calling the Flask API via
-tools; remembers guest preferences across sessions; and escalates to a human
-when a request exceeds its authority (party size > 12, complaints, etc.).
+tools; signs guests up for the newsletter directly from chat; remembers
+guest preferences across sessions; and escalates to a human when a request
+exceeds its authority (party size > 12, cancellations, complaints, etc.).
 
 ## Why a separate service?
 
@@ -107,7 +108,7 @@ Expected response:
   "service": "ai_agent",
   "status": "healthy",
   "pgvector": "0.8.6",
-  "knowledge_chunks": 35,
+  "knowledge_chunks": 40,
   "database": "connected"
 }
 ```
@@ -159,7 +160,7 @@ cd backend\ai_agent
 python -m rag.ingest_knowledge
 ```
 
-This embeds all 35 documents using local Ollama and stores them in the
+This embeds all 40 documents using local Ollama and stores them in the
 `efp_knowledge_chunks` table. Re-run whenever the knowledge file changes
 (it is idempotent via upsert).
 
@@ -212,7 +213,7 @@ backend/ai_agent/
 ├── prompts/
 │   └── system_prompt.py      # EFP brand-voice system prompt + business rules
 ├── knowledge/
-│   └── efp_knowledge.jsonl   # 35 documents: menu, about, policies, brand voice
+│   └── efp_knowledge.jsonl   # 40 documents: menu, about, policies, brand voice
 ├── rag/
 │   ├── chunker.py             # RecursiveCharacterTextSplitter wrapper
 │   ├── embeddings.py          # local Ollama embeddings + mock support
@@ -221,7 +222,7 @@ backend/ai_agent/
 │   ├── guardrails.py          # scope check + groundedness check
 │   └── ingest_knowledge.py    # CLI script: embed + upsert knowledge file
 ├── tools/
-│   └── reservation_tools.py  # 3 tools wrapping Flask API + JSON schema defs
+│   └── reservation_tools.py  # 4 tools wrapping Flask API + JSON schema defs
 ├── graph/
 │   └── state_machine.py       # LangGraph StateGraph: 9 nodes, conditional edges, Postgres checkpointer
 ├── memory/

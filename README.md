@@ -10,8 +10,8 @@ backend services and a React frontend:
   management, room/block administration
 - **FastAPI AI agent** (port 8000) — LangGraph-based concierge that answers
   guest questions via RAG, checks availability and books tables via tool calls,
-  remembers guest preferences across sessions, and escalates to a human when
-  a request exceeds its authority
+  signs guests up for the newsletter, remembers guest preferences across
+  sessions, and escalates to a human when a request exceeds its authority
 - **React frontend** (port 3000) — guest-facing website (menu, about,
   reservations, gallery) + admin dashboard
 
@@ -200,7 +200,7 @@ Ollama Cloud for the chat LLM.
    ```bash
    python -m rag.ingest_knowledge
    ```
-   This should report "Ingested 35 documents into efp_knowledge_chunks."
+   This should report "Ingested 40 documents into efp_knowledge_chunks."
 
 5. **Run the AI Agent Service**:
    - You can run the AI Agent together with Flask using the unified runner
@@ -222,7 +222,7 @@ Ollama Cloud for the chat LLM.
      "service": "ai_agent",
      "status": "healthy",
      "pgvector": "0.8.6",
-     "knowledge_chunks": 35,
+      "knowledge_chunks": 40,
      "database": "connected"
    }
    ```
@@ -361,7 +361,7 @@ eternal_fusion_pavilion/
 │       ├── tools/               # Flask API tool wrappers
 │       ├── rag/                 # RAG pipeline (embeddings, pgvector, retriever)
 │       ├── prompts/             # EFP brand-voice system prompt
-│       ├── knowledge/           # 35 knowledge documents (JSONL)
+│       ├── knowledge/           # 40 knowledge documents (JSONL)
 │       ├── evals/               # 50-scenario eval suite
 │       ├── tracing.py           # Structured JSON-line tracer
 │       └── tests/               # 124 tests across 5 phases + thread continuity + checkpointer + summarization

@@ -124,7 +124,7 @@ The system shall provide the following high-level functions:
 
 * **AI Agent:**
     * Answer guest questions about the menu, founders, locations, policies,
-      and dining hours via RAG (grounded in 35 knowledge documents stored in
+      and dining hours via RAG (grounded in 40 knowledge documents stored in
       pgvector).
     * Check availability and make reservations by calling the Flask API via
       tool wrappers (never bypassing business rules).
@@ -156,15 +156,15 @@ pages (never in admin). The admin UI components include `AdminNavigation`,
 | **Public User** | Any individual accessing the public website. | Read-only access to locations and availability. Can create new reservations, subscribe to newsletter, and chat with the AI concierge. |
 | **Admin** | A staff member with a registered account. | Full CRUD on reservations, customers, and blocks. Cannot override 'soft' blocks. |
 | **Manager** | A staff member with the `manager` role. | All 'Admin' permissions, plus the ability to override 'soft' reservation blocks. |
-| **AI Agent** | The autonomous concierge service. | Can call Flask API tools (get_locations, check_availability, create_reservation) on behalf of guests. Enforces the > 12 party size escalation rule client-side. Cannot access admin endpoints. |
+| **AI Agent** | The autonomous concierge service. | Can call Flask API tools (get_locations, check_availability, create_reservation, subscribe_newsletter) on behalf of guests. Enforces the > 12 party size escalation rule client-side. Cannot access admin endpoints. |
 
 ### 2.4 Operating Environment
 
 * **Frontend:** Modern web browsers (Chrome, Firefox, Safari, Edge). Built
   with React 19, Vite, Tailwind CSS 4, @tanstack/react-query, axios,
-  react-toastify, framer-motion, and lucide-react. Vite proxies `/api/ai/*`
-  to port 8000 and `/api/*` to port 5000 during development. Testing via
-  Vitest + @testing-library/react (66 tests).
+  react-toastify, framer-motion, lucide-react, react-markdown, and remark-gfm.
+  Vite proxies `/api/ai/*` to port 8000 and `/api/*` to port 5000 during
+  development. Testing via Vitest + @testing-library/react (66 tests).
 * **Flask Backend:** Python 3.14+ with Flask 3.1, Flask-Session 0.8,
   Flask-SQLAlchemy 3.1, Flask-Cors 6.0, bcrypt, and psycopg2-binary. Gunicorn
   as the WSGI server in production. Testing via pytest + pytest-flask.
@@ -238,8 +238,9 @@ B-tree indexes on `guest_ai_memory(guest_identifier)`.
 
 **Seed Data:** Three locations (JPN, ITA, ESP) each with 6 rooms
 (max_capacity=30); one default admin (admin/strongpassword); three sample
-customers; two sample reservations. 35 knowledge documents are ingested
-separately via `python -m rag.ingest_knowledge`.
+customers; two sample reservations; two newsletter subscribers (matching
+the customers with newsletter_signup=true). 40 knowledge documents are
+ingested separately via `python -m rag.ingest_knowledge`.
 
 ### 3.2 Functional Requirements
 
@@ -281,8 +282,15 @@ See `backend/utils/room_assignment.py`.)
 
 #### FR8: Admin Customer & Subscriber Management (Flask)
 
-(Same as before — read/update customers, read subscribers. See
-`backend/routes/admin_customers.py`.)
+* Read/update customers, read subscribers. See
+  `backend/routes/admin_customers.py`.
+* When an admin toggles a customer's `newsletter_signup` flag, the
+  corresponding `newsletter_subscribers` row is also created, reactivated,
+  or marked inactive (bidirectional sync between the `customers` and
+  `newsletter_subscribers` tables).
+* When a guest subscribes via `POST /api/newsletter/` (public endpoint or
+  chatbot tool), the `customers.newsletter_signup` flag is also set to true
+  if a customer with that email exists. See `backend/routes/newsletter.py`.
 
 #### FR9: Auditing & Profile Management (Flask)
 
@@ -314,13 +322,16 @@ See `backend/utils/room_assignment.py`.)
 * **FR11.3: Tool Calling (Phase 2)**
     * The agent shall provide `POST /api/ai/agent` and
       `POST /api/ai/agent/stream` for autonomous tool-calling.
-    * Three tools are defined: `get_locations`, `check_availability`,
-      `create_reservation`. Each wraps the corresponding Flask API endpoint
-      via HTTP.
+    * Four tools are defined: `get_locations`, `check_availability`,
+      `create_reservation`, `subscribe_newsletter`. Each wraps the
+      corresponding Flask API endpoint via HTTP.
     * The agent must enforce a client-side guardrail: party size > 12 is
       rejected before calling the Flask API (returns `requires_call: true`).
     * The ReAct loop runs for a maximum of 3 iterations to prevent infinite
       loops.
+    * The `subscribe_newsletter` tool wraps `POST /api/newsletter/` and
+      accepts `email` (required) and `name` (optional). It enables the
+      concierge to sign a guest up for the newsletter directly from chat.
 
 * **FR11.4: LangGraph State Machine (Phase 3)**
     * The agent shall provide `POST /api/ai/graph` and
@@ -330,7 +341,9 @@ See `backend/utils/room_assignment.py`.)
     * Conditional routing: in-scope questions go to RAG; out-of-scope go to
       response; tool calls go to tools; escalation triggers go to escalation.
     * The escalation node emits a "our team will follow up" response for
-      party size > 12, soft-block overrides, or sentiment-detected complaints.
+      party size > 12, soft-block overrides, sentiment-detected complaints,
+      or cancellation/refund requests (cancellations and refunds cannot be
+      processed online — the guest is directed to call the restaurant).
 
 * **FR11.5: Long-Term Memory (Phase 4)**
     * The agent shall retrieve guest memories at the start of each
@@ -460,6 +473,12 @@ See `backend/utils/room_assignment.py`.)
     * Escape closes the panel. Enter sends the message. Focus moves into the
       panel on open.
     * On small screens the panel expands to near-fullscreen.
+
+* **FR12.8: Markdown Rendering**
+    * Assistant messages shall be rendered as GitHub-flavored markdown
+      (bold, italic, lists, links) via `react-markdown` + `remark-gfm`.
+      User messages remain plain text (no markdown rendering for user
+      input — security best practice).
 
 ### 3.3 Non-Functional Requirements
 

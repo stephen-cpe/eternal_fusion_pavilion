@@ -28,6 +28,15 @@ vi.mock("framer-motion", () => ({
   AnimatePresence: ({ children }) => <>{children}</>,
 }));
 
+// Mock react-markdown so tests don't need the full markdown renderer.
+vi.mock("react-markdown", () => ({
+  default: ({ children }) => <div data-testid="markdown">{children}</div>,
+}));
+
+vi.mock("remark-gfm", () => ({
+  default: () => ({}),
+}));
+
 import ConciergeChat from "../components/ConciergeChat";
 import { streamChat, streamResume } from "../services/ai_api";
 

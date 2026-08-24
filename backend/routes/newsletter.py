@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 import re
-from models import NewsletterSubscriber
+from models import NewsletterSubscriber, Customer
 from database import db
 
 bp = Blueprint('newsletter', __name__)
@@ -23,7 +23,7 @@ def subscribe():
         return jsonify({'error': 'Invalid email format'}), 400
 
     try:
-        # Check if email already exists using ORM
+        # Check if email already exists in newsletter_subscribers
         subscriber = db.session.query(NewsletterSubscriber).filter_by(email=email).first()
 
         if subscriber:
@@ -32,15 +32,21 @@ def subscribe():
             else:
                 # Reactivate if previously unsubscribed
                 subscriber.status = 'active'
-                subscriber.subscribed_at = db.func.current_timestamp() # Use database function
+                subscriber.subscribed_at = db.func.current_timestamp()
         else:
             # Create new subscriber
             new_subscriber = NewsletterSubscriber(
                 email=email,
-                name=name if name else None, # Store None if name is empty
+                name=name if name else None,
                 status='active'
             )
             db.session.add(new_subscriber)
+
+        # Sync the newsletter_signup flag on the customers table so the
+        # admin Customers page stays consistent with the Newsletter page.
+        customer = db.session.query(Customer).filter_by(email=email).first()
+        if customer and not customer.newsletter_signup:
+            customer.newsletter_signup = True
 
         db.session.commit()
         return jsonify({'message': 'Successfully subscribed to newsletter'}), 201

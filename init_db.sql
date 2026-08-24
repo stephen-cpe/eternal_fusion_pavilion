@@ -260,3 +260,8 @@ INSERT INTO reservations (
     2, -- party_size within original constraint
     'confirmed'
 );
+
+-- Insert sample newsletter subscribers (matches customers with newsletter_signup=true)
+INSERT INTO newsletter_subscribers (email, name, status) VALUES
+('akira.tanaka@example.com', 'Akira Tanaka', 'active'),
+('sofia.rossi@example.com', 'Sofia Rossi', 'active');

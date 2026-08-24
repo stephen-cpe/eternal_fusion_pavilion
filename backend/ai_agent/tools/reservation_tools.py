@@ -121,6 +121,31 @@ EFP_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "subscribe_newsletter",
+            "description": (
+                "Subscribe a guest to the Eternal Fusion Pavilion newsletter. "
+                "Call this when a guest asks to sign up for the newsletter. "
+                "Requires the guest's email address; name is optional."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "description": "Guest's email address.",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Guest's name (optional).",
+                    },
+                },
+                "required": ["email"],
+            },
+        },
+    },
 ]
 
 
@@ -251,6 +276,35 @@ def create_reservation(
         return {"success": False, "error": f"Could not create reservation: {exc}"}
 
 
+def subscribe_newsletter(email: str, name: str | None = None) -> dict[str, Any]:
+    """Subscribe a guest to the newsletter via POST /api/newsletter/."""
+    payload: dict[str, Any] = {"email": email}
+    if name:
+        payload["name"] = name
+
+    try:
+        resp = requests.post(
+            f"{FLASK_BASE_URL}/api/newsletter/",
+            json=payload,
+            timeout=FLASK_TIMEOUT,
+        )
+        if resp.status_code in (200, 201):
+            return {
+                "success": True,
+                "message": resp.json().get("message", "Successfully subscribed to newsletter."),
+                "already_subscribed": resp.status_code == 200,
+            }
+        else:
+            error_data = resp.json()
+            return {
+                "success": False,
+                "error": error_data.get("error", "Subscription failed"),
+            }
+    except requests.RequestException as exc:
+        logger.error("subscribe_newsletter failed: %s", exc)
+        return {"success": False, "error": f"Could not subscribe to newsletter: {exc}"}
+
+
 # ---------------------------------------------------------------------------
 # Tool dispatcher — maps tool name to function
 # ---------------------------------------------------------------------------
@@ -259,6 +313,7 @@ TOOL_FUNCTIONS = {
     "get_locations": get_locations,
     "check_availability": check_availability,
     "create_reservation": create_reservation,
+    "subscribe_newsletter": subscribe_newsletter,
 }
 
 

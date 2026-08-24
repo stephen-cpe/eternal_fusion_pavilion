@@ -17,7 +17,10 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
-import { streamChat, getGuestId, getThreadId, newThreadId, clearThreadId, streamResume } from "../services/ai_api";
+import { streamChat, getGuestId, getThreadId, newThreadId, clearThreadId,
+  streamResume } from "../services/ai_api";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 // Tool name → human-readable status label.
 const TOOL_LABELS = {
@@ -517,11 +520,15 @@ function MessageBubble({ msg }) {
     );
   }
 
-  // Regular assistant message.
+  // Regular assistant message — render as markdown (bold, italic, lists, links).
   return (
     <div className="flex justify-start">
-      <div className="bg-background rounded-lg p-3 text-sm text-foreground max-w-[85%] shadow-sm border border-border whitespace-pre-wrap">
-        {msg.text}
+      <div className="bg-background rounded-lg p-3 text-sm text-foreground max-w-[85%] shadow-sm border border-border">
+        <div className="chat-markdown">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {msg.text}
+          </ReactMarkdown>
+        </div>
       </div>
     </div>
   );

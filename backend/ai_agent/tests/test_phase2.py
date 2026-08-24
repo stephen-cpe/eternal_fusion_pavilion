@@ -18,10 +18,10 @@ os.environ["AI_MOCK"] = "true"
 
 
 def test_tool_definitions_have_correct_names():
-    """The three EFP tools are defined with correct names."""
+    """The four EFP tools are defined with correct names."""
     from tools.reservation_tools import EFP_TOOLS
     names = {t["function"]["name"] for t in EFP_TOOLS}
-    assert names == {"get_locations", "check_availability", "create_reservation"}
+    assert names == {"get_locations", "check_availability", "create_reservation", "subscribe_newsletter"}
 
 
 def test_tool_definitions_have_required_fields():

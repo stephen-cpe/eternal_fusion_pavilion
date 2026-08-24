@@ -69,6 +69,25 @@ def update_customer(customer_id):
         # name/email/phone-only edits).
         if newsletter_signup is not None:
             customer.newsletter_signup = bool(newsletter_signup)
+            # Sync to newsletter_subscribers so the Newsletter admin page
+            # stays consistent with the Customers admin page.
+            subscriber = db.session.query(NewsletterSubscriber).filter_by(
+                email=customer.email
+            ).first()
+            if bool(newsletter_signup):
+                # Subscribing: create or reactivate the subscriber row.
+                if subscriber:
+                    subscriber.status = 'active'
+                else:
+                    db.session.add(NewsletterSubscriber(
+                        email=customer.email,
+                        name=customer.name,
+                        status='active',
+                    ))
+            else:
+                # Unsubscribing: mark the subscriber row inactive.
+                if subscriber:
+                    subscriber.status = 'inactive'
 
         # Log the audit
         log_audit(
