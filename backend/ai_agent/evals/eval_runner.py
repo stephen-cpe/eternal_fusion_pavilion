@@ -157,6 +157,14 @@ def run_all_evals(
             result["assertions_passed"], result["assertions_total"],
         )
 
+    # Memory extraction is asynchronous; wait for queued jobs before the
+    # runner exits so a guest's memories are complete when inspecting results.
+    try:
+        from graph.state_machine import wait_for_memory_jobs
+        wait_for_memory_jobs(timeout=120)
+    except Exception:
+        pass
+
     summary = {
         "total": len(results),
         "passed": passed_count,

@@ -1,9 +1,15 @@
 /**
  * AI Agent API service for the EFP concierge.
  *
- * Manages two localStorage-backed identifiers:
- *   - efp_guest_id: stable anonymous UUID (persists across sessions → long-term memory)
- *   - efp_thread_id: per-chat-session UUID (multi-turn continuity within one conversation)
+ * Manages two browser-backed identifiers:
+ *   - efp_guest_id: stable anonymous UUID in localStorage (persists across
+ *     visits → long-term guest memory)
+ *   - efp_thread_id: per-conversation UUID in sessionStorage. It resets when
+ *     the tab closes, together with the visible messages in sessionStorage,
+ *     so a new browser session never silently continues an old thread.
+ *
+ * The old localStorage thread id is intentionally ignored. Only the guest id
+ * is shared between tabs/visits; the conversation itself is not.
  *
  * If efp_guest_id is empty, memory_retrieve/memory_store no-op on the backend,
  * so this MUST always send a non-empty guest_identifier.
@@ -42,28 +48,28 @@ export function getGuestId() {
 }
 
 /**
- * Get the current thread ID from localStorage.
- * @returns {string} UUID string or empty if no active session.
+ * Get the current thread ID from sessionStorage.
+ * @returns {string} UUID string or empty if no active conversation.
  */
 export function getThreadId() {
-  return localStorage.getItem(THREAD_ID_KEY) || "";
+  return sessionStorage.getItem(THREAD_ID_KEY) || "";
 }
 
 /**
- * Start a new chat session — generates a fresh thread ID.
+ * Start a new conversation — generates a fresh thread ID for this tab.
  * @returns {string} The new thread ID.
  */
 export function newThreadId() {
   const id = generateUUID();
-  localStorage.setItem(THREAD_ID_KEY, id);
+  sessionStorage.setItem(THREAD_ID_KEY, id);
   return id;
 }
 
 /**
- * Clear the current thread ID (e.g., when the chat panel closes).
+ * Clear the current thread ID (e.g., "New conversation" or retry).
  */
 export function clearThreadId() {
-  localStorage.removeItem(THREAD_ID_KEY);
+  sessionStorage.removeItem(THREAD_ID_KEY);
 }
 
 /**

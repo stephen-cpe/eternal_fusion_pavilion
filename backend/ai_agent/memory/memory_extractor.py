@@ -9,11 +9,18 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from ollama_client import get_ollama_client
 
 logger = logging.getLogger(__name__)
+
+# Measured with qwen3-embedding:0.6b:
+#   "Name is Bruce Banner" vs "Name: Bruce Banner"   -> 0.9533 (duplicate)
+#   "Allergic to peanuts" vs "Allergic to shellfish" -> 0.8861 (not a duplicate)
+# 0.92 separates the two without folding different allergens together.
+DUPLICATE_SIMILARITY_THRESHOLD = 0.92
 
 EXTRACTION_PROMPT = """You are a memory extraction system for the Eternal Fusion Pavilion concierge.
 
@@ -34,18 +41,42 @@ Examples:
   {"memory_type": "procedural", "content": "Prefers to be called Mr. Doe"}
 ]
 
-Conversation:
+{known_facts}Conversation:
 {transcript}
 
 Extracted facts (JSON array only, no other text):"""
 
 
-def extract_memories(transcript: str, max_facts: int = 10) -> list[dict[str, str]]:
+def _normalize_content(content: str) -> str:
+    """Lowercase and keep only letters/digits for duplicate comparison."""
+    return re.sub(r"[^a-z0-9]", "", content.lower())
+
+
+def _format_known_facts(known_facts: list[dict[str, Any]] | None) -> str:
+    if not known_facts:
+        return ""
+    lines = [
+        f"- [{fact.get('memory_type', 'semantic')}] {fact.get('content', '')}"
+        for fact in known_facts
+        if fact.get("content")
+    ]
+    if not lines:
+        return ""
+    return "Facts already known (do not repeat these):\n" + "\n".join(lines) + "\n\n"
+
+
+def extract_memories(
+    transcript: str,
+    max_facts: int = 10,
+    known_facts: list[dict[str, Any]] | None = None,
+) -> list[dict[str, str]]:
     """Extract guest memories from a conversation transcript.
 
     Args:
         transcript: The full conversation text (user + assistant messages).
         max_facts: Maximum number of facts to extract.
+        known_facts: Existing memories for this guest, included in the
+            prompt so the model does not repeat what it already knows.
 
     Returns:
         List of {"memory_type": str, "content": str} dicts.
@@ -54,7 +85,9 @@ def extract_memories(transcript: str, max_facts: int = 10) -> list[dict[str, str
         return []
 
     client = get_ollama_client()
-    prompt = EXTRACTION_PROMPT.replace("{transcript}", transcript[:8000])
+    prompt = EXTRACTION_PROMPT.replace(
+        "{known_facts}", _format_known_facts(known_facts)
+    ).replace("{transcript}", transcript[:8000])
     messages = [
         {"role": "system", "content": "You are a memory extraction system. Return only valid JSON."},
         {"role": "user", "content": prompt},
@@ -103,11 +136,35 @@ def extract_and_store_memories(
     """
     from memory.memory_store import get_memory_store
 
-    facts = extract_memories(transcript)
     store = get_memory_store()
+    existing = store.get_memories(guest_identifier, limit=100)
+    known_normalized = {_normalize_content(m["content"]) for m in existing}
+
+    facts = extract_memories(transcript, known_facts=existing)
 
     stored: list[dict[str, Any]] = []
+    skipped = 0
     for fact in facts:
+        normalized = _normalize_content(fact["content"])
+        if normalized and normalized in known_normalized:
+            skipped += 1
+            logger.info("Skipping duplicate memory (normalized match): %.60s", fact["content"])
+            continue
+
+        try:
+            matches = store.search_memories(guest_identifier, fact["content"], top_k=1)
+        except Exception as exc:
+            logger.warning("Semantic duplicate check failed (%s); storing anyway", exc)
+            matches = []
+
+        if matches and matches[0].get("score", 0.0) >= DUPLICATE_SIMILARITY_THRESHOLD:
+            skipped += 1
+            logger.info(
+                "Skipping duplicate memory (similarity %.3f): %.60s",
+                matches[0]["score"], fact["content"],
+            )
+            continue
+
         result = store.store_memory(
             guest_identifier=guest_identifier,
             memory_type=fact["memory_type"],
@@ -115,6 +172,11 @@ def extract_and_store_memories(
         )
         if "error" not in result:
             stored.append(result)
+            if normalized:
+                known_normalized.add(normalized)
 
-    logger.info("Stored %d memories for guest %s", len(stored), guest_identifier)
+    logger.info(
+        "Stored %d memories for guest %s (%d duplicates skipped)",
+        len(stored), guest_identifier, skipped,
+    )
     return stored

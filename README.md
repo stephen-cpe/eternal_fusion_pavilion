@@ -452,7 +452,7 @@ eternal_fusion_pavilion/
 │       ├── knowledge/           # 40 knowledge documents (JSONL)
 │       ├── evals/               # 50-scenario eval suite
 │       ├── tracing.py           # Structured JSON-line tracer
-│       └── tests/               # 127 tests across 5 phases + thread continuity + checkpointer + summarization
+│       └── tests/               # 156 tests: phases, thread continuity, checkpointer, summarization, chat fixes
 ├── frontend/                   # React frontend (port 3000)
 │   └── src/
 │       ├── pages/               # Home, Menu, About, Reservations, Gallery, Admin
@@ -479,7 +479,7 @@ eternal_fusion_pavilion/
 | Streaming | Server-Sent Events via `sse-starlette` |
 | Database | PostgreSQL 18 + pgvector 0.8.6 (independent SQLAlchemy engine) |
 | Tracing | Lightweight local JSON-line tracer (no external dependency) |
-| Tests | pytest (127 tests across 5 phases + thread continuity + checkpointer + summarization) |
+| Tests | pytest (156 tests: phases, thread continuity, checkpointer, summarization, chat fixes) |
 
 ---
 
@@ -490,17 +490,34 @@ The React frontend includes a floating concierge chat widget
 admin dashboard). It provides:
 
 - SSE streaming chat with the LangGraph agent (token-by-token rendering)
+- A live status line while the agent works ("Sending…", "Thinking…",
+  "Writing the reply…", or a tool-specific label) with a pulsing dot. It
+  appends the elapsed seconds after 5 seconds and uses `aria-live="polite"`.
 - Tool-call status badges ("Checking availability...", etc.)
 - Escalation notices (distinct visual for "our team will follow up")
 - Booking confirmation cards (reservation number, room, date/time)
 - Graceful degradation (503/network error shows a friendly message + link
-  to the reservations page)
-- Multi-turn continuity (per-session `thread_id` in localStorage)
-- Long-term memory (stable anonymous `guest_id` in localStorage)
+  to the reservations page). If no SSE frame arrives for 4 minutes, the
+  request is aborted and the same retry state is shown.
+- Multi-turn continuity (`thread_id` in sessionStorage, so it resets with
+  the tab). The "New conversation" button clears the visible messages and
+  starts a new thread without touching the guest's stored memories.
+- Long-term memory (stable anonymous `guest_id` in localStorage, so it
+  persists across visits). Memory extraction runs in the background after
+  each reply; the guest does not wait for it.
 - Accessibility (aria-label, Escape to close, Enter to send, focus management)
 - Mobile-responsive (panel expands to near-fullscreen on small screens)
 
-Frontend tests: 66 tests pass (sseParser, ai_api, ConciergeChat, existing).
+Frontend tests: 72 tests pass (sseParser, ai_api, ConciergeChat, existing).
+
+### Local API calls are slow on Windows
+
+If calls to the local Flask API or Ollama take about 2 seconds each, check
+whether the URL uses `localhost`. On Windows, `localhost` resolves to IPv6
+`::1` first; Flask (`0.0.0.0`) and Ollama listen on IPv4 only, so each new
+connection waits for the fallback. Use `127.0.0.1` instead. The defaults in
+`backend/ai_agent/config.py`, `backend/ai_agent/tools/reservation_tools.py`,
+and `frontend/vite.config.mjs` already use `127.0.0.1`.
 
 ---
 

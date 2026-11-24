@@ -8,11 +8,14 @@
  * - Escalation notice (distinct visual for "our team will follow up")
  * - Booking confirmation card (reservation number, room, date/time)
  * - Graceful degradation (503 → "concierge unavailable" + link to reservations)
- * - Multi-turn continuity (thread_id in localStorage)
+ * - Multi-turn continuity (thread_id in sessionStorage, resets with the tab)
+ * - "New conversation" button clears visible messages and starts a new thread
  * - Long-term memory (guest_id in localStorage)
- * - Accessibility: aria-label, Escape to close, Enter to send, focus management
+ * - Live status line while the agent works (with elapsed seconds)
+ * - Accessibility: aria-label, aria-live status, Escape to close, focus management
  * - Mobile: panel expands to near-fullscreen on small screens
- * - AbortController: cancels stream on unmount/navigate/close
+ * - AbortController: cancels stream on unmount/navigate/close, plus a
+ *   4-minute no-frame watchdog that surfaces the retry state
  */
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -21,6 +24,11 @@ import { streamChat, getGuestId, getThreadId, newThreadId, clearThreadId,
   streamResume } from "../services/ai_api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+
+// If no SSE frame arrives for this long, abort and show the retry state.
+const STREAM_INACTIVITY_TIMEOUT_MS = 4 * 60 * 1000;
+// Append elapsed seconds to the status after this many seconds.
+const STATUS_ELAPSED_AFTER_SECONDS = 5;
 
 // Tool name → human-readable status label.
 const TOOL_LABELS = {
@@ -47,6 +55,7 @@ export default function ConciergeChat() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [toolStatus, setToolStatus] = useState(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [error, setError] = useState(null);
   const [hasError, setHasError] = useState(false);
   const [threadStarted, setThreadStarted] = useState(() => !!getThreadId());
@@ -54,8 +63,17 @@ export default function ConciergeChat() {
   const [isResuming, setIsResuming] = useState(false);
 
   const abortRef = useRef(null);
+  const watchdogRef = useRef(null);
   const inputRef = useRef(null);
   const scrollRef = useRef(null);
+
+  // Count elapsed seconds so a long wait never looks frozen. The status line
+  // appends the count after 5 seconds.
+  useEffect(() => {
+    if (!isStreaming) return undefined;
+    const id = setInterval(() => setElapsedSeconds((seconds) => seconds + 1), 1000);
+    return () => clearInterval(id);
+  }, [isStreaming]);
 
   // Persist messages to sessionStorage whenever they change.
   useEffect(() => {
@@ -78,11 +96,14 @@ export default function ConciergeChat() {
     }
   }, [isOpen]);
 
-  // Cancel any in-flight stream on unmount.
+  // Cancel any in-flight stream and watchdog on unmount.
   useEffect(() => {
     return () => {
       if (abortRef.current) {
         abortRef.current.abort();
+      }
+      if (watchdogRef.current) {
+        clearTimeout(watchdogRef.current);
       }
     };
   }, []);
@@ -113,12 +134,28 @@ export default function ConciergeChat() {
     setInput("");
     setIsStreaming(true);
     setStreamingText("");
-    setToolStatus(null);
+    setToolStatus("Sending…");
+    setElapsedSeconds(0);
     setError(null);
 
     // Set up AbortController for this request.
     const controller = new AbortController();
     abortRef.current = controller;
+
+    // Reset the 4-minute inactivity watchdog on every SSE frame.
+    const armWatchdog = () => {
+      if (watchdogRef.current) clearTimeout(watchdogRef.current);
+      watchdogRef.current = setTimeout(() => {
+        controller.abort();
+        setIsStreaming(false);
+        setStreamingText("");
+        setToolStatus(null);
+        setElapsedSeconds(0);
+        setError("The concierge is taking too long to respond. Please try again.");
+        setHasError(true);
+      }, STREAM_INACTIVITY_TIMEOUT_MS);
+    };
+    armWatchdog();
 
     let fullAnswer = "";
     let toolResults = [];
@@ -128,28 +165,39 @@ export default function ConciergeChat() {
         question,
         {
           onNode: (node) => {
-            if (node === "rag") setToolStatus("Searching our knowledge...");
-            else if (node === "agent") setToolStatus(null);
-            else if (node === "memory_retrieve") setToolStatus("Recalling your preferences...");
+            armWatchdog();
+            if (node === "agent") {
+              setToolStatus("Writing the reply…");
+            } else if ([
+              "memory_retrieve", "triage", "rag", "summarize", "tools",
+              "escalation", "memory_store",
+            ].includes(node)) {
+              setToolStatus("Thinking…");
+            }
           },
           onToken: (token) => {
+            armWatchdog();
             fullAnswer += token;
             setStreamingText(fullAnswer);
           },
           onToolCall: (call) => {
+            armWatchdog();
             setToolStatus(toolStatusLabel(call.name));
           },
           onToolResult: (result) => {
+            armWatchdog();
             toolResults.push(result);
-            setToolStatus(null);
+            setToolStatus("Thinking…");
           },
           onEscalation: (reason) => {
+            armWatchdog();
             setMessages((prev) => [
               ...prev,
               { role: "assistant", type: "escalation", text: reason },
             ]);
           },
           onDone: (data) => {
+            armWatchdog();
             if (data.interrupted && data.interrupt_data) {
               // HITL interrupt — show confirmation card.
               setPendingConfirmation({
@@ -175,6 +223,7 @@ export default function ConciergeChat() {
             setToolStatus(null);
           },
           onError: (errMsg) => {
+            armWatchdog();
             setError(errMsg);
             setHasError(true);
           },
@@ -184,9 +233,14 @@ export default function ConciergeChat() {
     } catch {
       // Errors handled by onError callback.
     } finally {
+      if (watchdogRef.current) {
+        clearTimeout(watchdogRef.current);
+        watchdogRef.current = null;
+      }
       setIsStreaming(false);
       setStreamingText("");
       setToolStatus(null);
+      setElapsedSeconds(0);
       abortRef.current = null;
     }
   }, [input, isStreaming, hasError, threadStarted, pendingConfirmation]);
@@ -276,6 +330,28 @@ export default function ConciergeChat() {
     }
   }, [pendingConfirmation]);
 
+  const handleNewConversation = useCallback(() => {
+    if (abortRef.current) abortRef.current.abort();
+    if (watchdogRef.current) {
+      clearTimeout(watchdogRef.current);
+      watchdogRef.current = null;
+    }
+    clearThreadId();
+    newThreadId();
+    setThreadStarted(true);
+    setMessages([]);
+    setInput("");
+    setStreamingText("");
+    setToolStatus(null);
+    setElapsedSeconds(0);
+    setError(null);
+    setHasError(false);
+    setPendingConfirmation(null);
+    setIsStreaming(false);
+    setIsResuming(false);
+    try { sessionStorage.removeItem("efp_chat_messages"); } catch { /* ignore */ }
+  }, []);
+
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -296,6 +372,12 @@ export default function ConciergeChat() {
   const toggleOpen = () => {
     setIsOpen((prev) => !prev);
   };
+
+  const showStatus = !streamingText && (isStreaming || isResuming);
+  const baseStatus = toolStatus || (isResuming ? "Confirming your reservation..." : "Thinking…");
+  const statusText = elapsedSeconds >= STATUS_ELAPSED_AFTER_SECONDS
+    ? `${baseStatus} ${elapsedSeconds}s`
+    : baseStatus;
 
   return (
     <>
@@ -336,15 +418,24 @@ export default function ConciergeChat() {
                 <h3 className="font-semibold text-sm text-white">EFP Concierge</h3>
                 <p className="text-xs text-white/80">Your culinary sanctuary guide</p>
               </div>
-              <button
-                onClick={() => setIsOpen(false)}
-                aria-label="Close chat"
-                className="text-white/80 hover:text-white transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleNewConversation}
+                  aria-label="Start a new conversation"
+                  className="text-xs text-white/80 hover:text-white transition-colors whitespace-nowrap"
+                >
+                  New conversation
+                </button>
+                <button
+                  onClick={() => setIsOpen(false)}
+                  aria-label="Close chat"
+                  className="text-white/80 hover:text-white transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             {/* Messages area */}
@@ -360,11 +451,14 @@ export default function ConciergeChat() {
                 <MessageBubble key={i} msg={msg} />
               ))}
 
-              {/* Tool status badge */}
-              {toolStatus && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              {/* Status line — visible from send until answer text arrives. */}
+              {showStatus && (
+                <div
+                  aria-live="polite"
+                  className="flex items-center gap-2 text-xs text-muted-foreground"
+                >
                   <span className="inline-block w-2 h-2 rounded-full bg-icon-blue animate-pulse" />
-                  {toolStatus}
+                  {statusText}
                 </div>
               )}
 

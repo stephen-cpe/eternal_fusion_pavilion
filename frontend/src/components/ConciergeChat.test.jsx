@@ -4,7 +4,7 @@
  * Mocks the ai_api service so no network calls are made.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 // Mock the ai_api module.
@@ -38,7 +38,7 @@ vi.mock("remark-gfm", () => ({
 }));
 
 import ConciergeChat from "../components/ConciergeChat";
-import { streamChat, streamResume } from "../services/ai_api";
+import { streamChat, streamResume, clearThreadId, newThreadId } from "../services/ai_api";
 
 function renderChat() {
   return render(
@@ -50,6 +50,7 @@ function renderChat() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  try { sessionStorage.clear(); } catch { /* ignore */ }
 });
 
 describe("ConciergeChat", () => {
@@ -295,5 +296,134 @@ describe("ConciergeChat", () => {
       expect(streamResume.mock.calls[0][0]).toBe("confirm-thread");
       expect(streamResume.mock.calls[0][1]).toBe(true);
     });
+  });
+
+  it("shows 'Sending…' before the first SSE frame with aria-live", async () => {
+    let resolveStream;
+    streamChat.mockImplementation(() => new Promise((resolve) => { resolveStream = resolve; }));
+
+    renderChat();
+    fireEvent.click(screen.getByLabelText(/open concierge/i));
+
+    const input = screen.getByLabelText(/type your message/i);
+    fireEvent.change(input, { target: { value: "hello" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      const status = screen.getByText("Sending…");
+      expect(status).toBeDefined();
+      expect(status.getAttribute("aria-live")).toBe("polite");
+    });
+
+    if (resolveStream) resolveStream();
+  });
+
+  it("shows 'Thinking…' after node frames and 'Writing the reply…' after agent", async () => {
+    let resolveStream;
+    streamChat.mockImplementation(async (question, callbacks) => {
+      callbacks.onNode("rag");
+      callbacks.onNode("tools");
+      await new Promise((resolve) => { resolveStream = resolve; });
+    });
+
+    renderChat();
+    fireEvent.click(screen.getByLabelText(/open concierge/i));
+
+    const input = screen.getByLabelText(/type your message/i);
+    fireEvent.change(input, { target: { value: "what desserts?" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(screen.getByText("Thinking…")).toBeDefined();
+    });
+
+    // A later agent frame with no tool calls moves to the writing label.
+    await act(async () => {
+      streamChat.mock.calls[0][1].onNode("agent");
+    });
+    expect(screen.getByText("Writing the reply…")).toBeDefined();
+
+    if (resolveStream) resolveStream();
+  });
+
+  it("appends elapsed seconds to the status after 5 seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveStream;
+      streamChat.mockImplementation((question, callbacks) => {
+        callbacks.onNode("rag");
+        return new Promise((resolve) => { resolveStream = resolve; });
+      });
+
+      renderChat();
+      fireEvent.click(screen.getByLabelText(/open concierge/i));
+
+      const input = screen.getByLabelText(/type your message/i);
+      fireEvent.change(input, { target: { value: "hello" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      await act(async () => { vi.advanceTimersByTime(0); });
+      expect(screen.getByText("Thinking…")).toBeDefined();
+
+      await act(async () => { vi.advanceTimersByTime(5000); });
+      expect(screen.getByText("Thinking… 5s")).toBeDefined();
+
+      await act(async () => { if (resolveStream) resolveStream(); });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("aborts and shows the retry error after 4 minutes without frames", async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveStream;
+      let capturedSignal;
+      streamChat.mockImplementation((question, callbacks, signal) => {
+        capturedSignal = signal;
+        return new Promise((resolve) => { resolveStream = resolve; });
+      });
+
+      renderChat();
+      fireEvent.click(screen.getByLabelText(/open concierge/i));
+
+      const input = screen.getByLabelText(/type your message/i);
+      fireEvent.change(input, { target: { value: "hello" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      await act(async () => { vi.advanceTimersByTime(4 * 60 * 1000); });
+
+      expect(capturedSignal.aborted).toBe(true);
+      expect(screen.getByText(/taking too long to respond/i)).toBeDefined();
+      expect(screen.getByRole("button", { name: /try again/i })).toBeDefined();
+
+      await act(async () => { if (resolveStream) resolveStream(); });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("starts a new conversation from the header", async () => {
+    streamChat.mockImplementation(async (question, callbacks) => {
+      callbacks.onToken("Hello there");
+      callbacks.onDone({ done: true, thread_id: "t1" });
+    });
+
+    renderChat();
+    fireEvent.click(screen.getByLabelText(/open concierge/i));
+
+    const input = screen.getByLabelText(/type your message/i);
+    fireEvent.change(input, { target: { value: "hi" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Hello there/i)).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByLabelText(/start a new conversation/i));
+
+    expect(screen.queryByText(/Hello there/i)).toBeNull();
+    expect(clearThreadId).toHaveBeenCalled();
+    expect(newThreadId).toHaveBeenCalled();
   });
 });

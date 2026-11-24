@@ -19,6 +19,22 @@ Object.defineProperty(globalThis, "localStorage", {
   writable: true,
 });
 
+// Thread ids live in sessionStorage so they reset with the visible messages.
+const sessionStorageMock = (() => {
+  let store = {};
+  return {
+    getItem: vi.fn((key) => store[key] || null),
+    setItem: vi.fn((key, value) => { store[key] = String(value); }),
+    removeItem: vi.fn((key) => { delete store[key]; }),
+    clear: vi.fn(() => { store = {}; }),
+  };
+})();
+
+Object.defineProperty(globalThis, "sessionStorage", {
+  value: sessionStorageMock,
+  writable: true,
+});
+
 // Import after mocks are set up.
 import {
   getGuestId,
@@ -33,6 +49,10 @@ beforeEach(() => {
   localStorageMock.getItem.mockClear();
   localStorageMock.setItem.mockClear();
   localStorageMock.removeItem.mockClear();
+  sessionStorageMock.clear();
+  sessionStorageMock.getItem.mockClear();
+  sessionStorageMock.setItem.mockClear();
+  sessionStorageMock.removeItem.mockClear();
 });
 
 describe("getGuestId", () => {
@@ -57,20 +77,25 @@ describe("getThreadId", () => {
     expect(id).toBe("");
   });
 
-  it("returns the stored thread ID", () => {
-    localStorageMock.setItem("efp_thread_id", "thread-abc");
-    localStorageMock.getItem.mockReturnValueOnce("thread-abc");
+  it("returns the stored thread ID from sessionStorage", () => {
+    sessionStorageMock.setItem("efp_thread_id", "thread-abc");
+    sessionStorageMock.getItem.mockReturnValueOnce("thread-abc");
     const id = getThreadId();
     expect(id).toBe("thread-abc");
+  });
+
+  it("ignores an old thread ID left in localStorage", () => {
+    localStorageMock.setItem("efp_thread_id", "old-local-thread");
+    expect(getThreadId()).toBe("");
   });
 });
 
 describe("newThreadId", () => {
-  it("generates and stores a new UUID", () => {
+  it("generates and stores a new UUID in sessionStorage", () => {
     const id = newThreadId();
     expect(id).toBeTruthy();
     expect(id.length).toBeGreaterThan(10);
-    expect(localStorageMock.setItem).toHaveBeenCalledWith("efp_thread_id", id);
+    expect(sessionStorageMock.setItem).toHaveBeenCalledWith("efp_thread_id", id);
   });
 
   it("generates different UUIDs on successive calls", () => {
@@ -81,9 +106,9 @@ describe("newThreadId", () => {
 });
 
 describe("clearThreadId", () => {
-  it("removes the thread ID from localStorage", () => {
+  it("removes the thread ID from sessionStorage", () => {
     clearThreadId();
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith("efp_thread_id");
+    expect(sessionStorageMock.removeItem).toHaveBeenCalledWith("efp_thread_id");
   });
 });
 
@@ -96,9 +121,12 @@ describe("sendChat", () => {
     global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
     localStorageMock.setItem("efp_guest_id", "guest-123");
-    localStorageMock.setItem("efp_thread_id", "thread-456");
+    sessionStorageMock.setItem("efp_thread_id", "thread-456");
     localStorageMock.getItem.mockImplementation((key) => {
       if (key === "efp_guest_id") return "guest-123";
+      return null;
+    });
+    sessionStorageMock.getItem.mockImplementation((key) => {
       if (key === "efp_thread_id") return "thread-456";
       return null;
     });

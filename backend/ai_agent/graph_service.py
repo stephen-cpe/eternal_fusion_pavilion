@@ -67,7 +67,6 @@ class GraphService:
             "source": result.get("source", "agent"),
             "latency_ms": latency,
             "in_scope": result.get("in_scope", True),
-            "stored_memories": result.get("stored_memories", []),
             "thread_id": tid,
         }
 
@@ -109,7 +108,6 @@ class GraphService:
             "source": result.get("source", "agent"),
             "latency_ms": latency,
             "in_scope": result.get("in_scope", True),
-            "stored_memories": result.get("stored_memories", []),
             "thread_id": thread_id,
         }
 
@@ -238,7 +236,6 @@ class GraphService:
         final_answer = ""
         final_source = "agent"
         in_scope = True
-        stored_memories: list = []
 
         try:
             for event in self._graph.stream(initial_state, config=config, stream_mode="updates"):
@@ -287,11 +284,9 @@ class GraphService:
                             "escalation": update.get("escalation_reason", "Escalation triggered"),
                         })
 
-                    # If memory_store produced stored memories, emit them.
-                    if node_name == "memory_store" and isinstance(update, dict):
-                        stored_memories = update.get("stored_memories", [])
-                        if stored_memories:
-                            yield self._sse_frame({"stored_memories": stored_memories})
+                    # memory_store now queues extraction in the background
+                    # and returns no data, so there is no stored_memories
+                    # frame. The node frame above is still emitted.
 
                     # Capture answer from agent or escalation.
                     if node_name in ("agent", "escalation", "response") and isinstance(update, dict):
@@ -346,7 +341,6 @@ class GraphService:
                 "latency_ms": latency,
                 "done": True,
                 "in_scope": in_scope,
-                "stored_memories_count": len(stored_memories),
                 "thread_id": tid,
             })
 

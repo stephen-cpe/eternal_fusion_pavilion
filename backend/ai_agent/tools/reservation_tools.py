@@ -19,8 +19,10 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# The Flask app runs on port 5000 in development.
-FLASK_BASE_URL = os.environ.get("FLASK_BASE_URL", "http://localhost:5000")
+# The Flask app runs on port 5000 in development. Use the IPv4 literal:
+# on Windows "localhost" resolves to ::1 first, but Flask listens on IPv4,
+# so every call paid a ~2 s fallback delay (measured in Phase 0).
+FLASK_BASE_URL = os.environ.get("FLASK_BASE_URL", "http://127.0.0.1:5000")
 FLASK_TIMEOUT = int(os.environ.get("FLASK_TIMEOUT", "30"))
 
 

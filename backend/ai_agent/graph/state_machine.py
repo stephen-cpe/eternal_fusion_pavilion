@@ -33,7 +33,10 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import wait as wait_for_futures
 from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -50,7 +53,81 @@ from tools.reservation_tools import EFP_TOOLS, execute_tool
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_ITERATIONS = 3
+MAX_TOOL_ITERATIONS = 5
+
+# Memory extraction runs on one background worker so a slow LLM call never
+# delays the guest's answer. Jobs are tracked so tests and the eval runner
+# can wait for them explicitly.
+_memory_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="efp-memory")
+_memory_futures: set[Future] = set()
+_memory_futures_lock = threading.Lock()
+
+
+def _augment_latest_user_message(messages: list[dict[str, Any]], context: str) -> list[dict[str, Any]]:
+    """Return a copy of the messages with context added to the latest user turn.
+
+    The checkpointed history keeps only the guest's plain question (Bug 2).
+    Context is request-scoped: it is attached only to the copy sent to the
+    LLM, so old context blocks never accumulate in the transcript.
+    """
+    if not context:
+        return list(messages)
+
+    augmented = list(messages)
+    for index in range(len(augmented) - 1, -1, -1):
+        message = augmented[index]
+        if message.get("role") != "user":
+            continue
+        question = message.get("content", "")
+        augmented[index] = {
+            **message,
+            "content": (
+                f"Use the following context to answer the question. "
+                f"If the answer is not in the context, say you don't know.\n\n"
+                f"Context:\n{context}\n\n"
+                f"Question: {question}"
+            ),
+        }
+        break
+    return augmented
+
+
+def _forget_memory_job(future: Future) -> None:
+    with _memory_futures_lock:
+        _memory_futures.discard(future)
+
+
+def _extract_and_store_in_background(guest_id: str, transcript: str) -> list[dict[str, Any]]:
+    """Run memory extraction in the background; never raise into the graph."""
+    try:
+        from memory.memory_extractor import extract_and_store_memories
+
+        stored = extract_and_store_memories(guest_id, transcript)
+        logger.info("[memory_store] stored %d memories for %s", len(stored), guest_id)
+        return stored
+    except Exception:
+        logger.exception("[memory_store] extraction failed for %s", guest_id)
+        return []
+
+
+def wait_for_memory_jobs(timeout: float | None = None) -> int:
+    """Wait for queued background memory extraction jobs to finish.
+
+    Returns the number of jobs that completed (including ones that were
+    already done when called). Used by tests and the eval runner; the graph
+    itself never waits for extraction.
+    """
+    with _memory_futures_lock:
+        pending = list(_memory_futures)
+    if not pending:
+        return 0
+
+    done, _not_done = wait_for_futures(pending, timeout=timeout)
+    with _memory_futures_lock:
+        for future in pending:
+            if future.done():
+                _memory_futures.discard(future)
+    return len(done)
 
 
 class AgentState(TypedDict, total=False):
@@ -176,24 +253,19 @@ def rag_node(state: AgentState) -> dict[str, Any]:
     existing_messages = state.get("messages")
 
     if existing_messages:
-        # Continuation turn: append the new user message to the checkpointed
-        # conversation history. The LLM sees all prior turns.
-        user_content = state["question"]
-        if context:
-            user_content = (
-                f"Use the following context to answer the question. "
-                f"If the answer is not in the context, say you don't know.\n\n"
-                f"Context:\n{context}\n\n"
-                f"Question: {state['question']}"
-            )
+        # Continuation turn: append the guest's plain question to the
+        # checkpointed conversation history. Context is added only to the
+        # copy sent to the LLM (see _augment_latest_user_message).
         messages = list(existing_messages)
-        messages.append({"role": "user", "content": user_content})
+        messages.append({"role": "user", "content": state["question"]})
         logger.info("[rag] continuation turn: %d total messages (appended new turn)", len(messages))
     else:
-        # First turn: build messages from scratch.
+        # First turn: build messages from scratch with the plain question.
+        # The current request's context lives in state["context"] and is
+        # attached per agent call, not stored in the conversation history.
         messages = build_prompt(
             system=SYSTEM_PROMPT,
-            context=context,
+            context="",
             question=state["question"],
             enable_thinking=config.enable_thinking,
         )
@@ -240,20 +312,45 @@ def summarize_node(state: AgentState) -> dict[str, Any]:
         # Not enough messages to warrant summarization.
         return {}
 
-    # Keep the system prompt (messages[0]) and the last KEEP_RECENT messages.
+    # Keep the system prompt (messages[0]) and find a cut that starts the
+    # recent window at a user message. Starting with an orphan tool result
+    # or an assistant tool-call message gives the model an unusable turn.
     system_msg = messages[0]
-    recent_messages = messages[-KEEP_RECENT:]
-    older_messages = messages[1:-KEEP_RECENT]
+    recent_start = max(1, len(messages) - KEEP_RECENT)
+    while recent_start < len(messages) and messages[recent_start].get("role") != "user":
+        recent_start += 1
+    if recent_start >= len(messages):
+        # No user message at or after the nominal cut — search backwards.
+        recent_start = max(1, len(messages) - KEEP_RECENT)
+        while recent_start > 1 and messages[recent_start].get("role") != "user":
+            recent_start -= 1
+    if recent_start <= 1:
+        return {}
+
+    recent_messages = messages[recent_start:]
+    older_messages = messages[1:recent_start]
 
     if not older_messages:
         return {}
 
-    # Build a transcript of the older messages for the summarizer.
+    # Build a transcript of the older messages for the summarizer. Tool
+    # results and empty assistant tool-call messages become one short line
+    # each instead of dumping boilerplate or raw JSON.
     transcript_parts = []
     for msg in older_messages:
         role = msg.get("role", "unknown")
-        content = msg.get("content", "")
-        if content:
+        content = msg.get("content", "") or ""
+        tool_calls = msg.get("tool_calls") or []
+        if role == "tool":
+            name = msg.get("name") or "tool"
+            transcript_parts.append(f"tool {name}: {content[:200]}")
+        elif role == "assistant" and not content.strip() and tool_calls:
+            names = []
+            for tc in tool_calls:
+                func_info = tc.get("function", tc)
+                names.append(func_info.get("name", "unknown"))
+            transcript_parts.append(f"assistant called tools: {', '.join(names)}")
+        elif content.strip():
             transcript_parts.append(f"{role}: {content[:500]}")
     transcript = "\n".join(transcript_parts)
 
@@ -279,10 +376,13 @@ def summarize_node(state: AgentState) -> dict[str, Any]:
         logger.warning("[summarize] LLM call failed (%s); skipping summarization", exc)
         return {}
 
-    # Build the new message list: system prompt (with summary) + recent messages.
+    # Build the new message list: system prompt (with one summary) + recent
+    # messages. Strip any summary from a previous pass first so summaries
+    # do not stack in the system prompt.
+    system_content = system_msg["content"].split("\n\n[Conversation Summary", 1)[0]
     new_system = {
         "role": "system",
-        "content": system_msg["content"] + f"\n\n[Conversation Summary — what happened so far]\n{new_summary}",
+        "content": system_content + f"\n\n[Conversation Summary — what happened so far]\n{new_summary}",
     }
     new_messages = [new_system] + recent_messages
 
@@ -294,9 +394,13 @@ def summarize_node(state: AgentState) -> dict[str, Any]:
 
 
 def agent_node(state: AgentState) -> dict[str, Any]:
-    """Call the LLM with tools. Returns tool_calls or a final answer."""
+    """Call the LLM with tools. Returns tool_calls or a final answer.
+
+    The context for the current request is attached to a copy of the latest
+    user message on every call, including iterations of the tool loop.
+    """
     client = get_ollama_client()
-    messages = state["messages"]
+    messages = _augment_latest_user_message(state["messages"], state.get("context", ""))
     response = client.chat_with_tools(messages, EFP_TOOLS)
 
     content = response.get("content", "")
@@ -437,19 +541,40 @@ def escalation_node(state: AgentState) -> dict[str, Any]:
 
 
 def response_node(state: AgentState) -> dict[str, Any]:
-    """Format the final answer for the client."""
-    answer = state.get("answer") or "I wasn't able to determine an answer."
+    """Format the final answer and append it to the conversation history.
+
+    Only turns that went through rag (including the escalation path) append
+    the assistant reply. The out-of-scope path leaves the history untouched.
+    """
+    answer = state.get("answer") or ""
     source = state.get("source", "agent")
+
+    if not answer and state.get("tool_calls") and state.get("iteration_count", 0) >= MAX_TOOL_ITERATIONS:
+        answer = (
+            "I wasn't able to finish that check because the request needed "
+            "too many steps. Please try again in a moment, or call the "
+            "location directly and our team will help you."
+        )
+
+    if not answer:
+        answer = "I wasn't able to determine an answer."
+
     logger.info("[response] source=%s answer=%d chars", source, len(answer))
-    return {"answer": answer, "source": source}
+
+    update: dict[str, Any] = {"answer": answer, "source": source}
+    if state.get("in_scope"):
+        messages = list(state.get("messages", []))
+        messages.append({"role": "assistant", "content": answer})
+        update["messages"] = messages
+    return update
 
 
 def memory_store_node(state: AgentState) -> dict[str, Any]:
-    """Extract facts from the conversation and store them as guest memories.
+    """Queue fact extraction in the background and return immediately.
 
-    This runs after the response is generated, as a background step.
-    It builds a transcript from the question + answer + tool results,
-    sends it to the LLM for fact extraction, and stores the results.
+    Extraction makes a blocking LLM call plus embeddings, which used to
+    delay the answer by 7-35 seconds. The job receives plain values (guest
+    id + transcript), never the graph state, and logs its own failures.
     """
     guest_id = state.get("guest_identifier", "")
     if not guest_id:
@@ -466,14 +591,11 @@ def memory_store_node(state: AgentState) -> dict[str, Any]:
         for tr in state["tool_results"]:
             transcript += f"\n[Tool: {tr['name']} result: {json.dumps(tr.get('result', {}))[:200]}]"
 
-    try:
-        from memory.memory_extractor import extract_and_store_memories
-        stored = extract_and_store_memories(guest_id, transcript)
-        logger.info("[memory_store] stored %d memories for %s", len(stored), guest_id)
-        return {"stored_memories": stored}
-    except Exception as exc:
-        logger.error("[memory_store] extraction failed: %s", exc)
-        return {}
+    future = _memory_executor.submit(_extract_and_store_in_background, guest_id, transcript)
+    with _memory_futures_lock:
+        _memory_futures.add(future)
+    future.add_done_callback(_forget_memory_job)
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -484,14 +606,13 @@ def memory_store_node(state: AgentState) -> dict[str, Any]:
 def route_after_triage(state: AgentState) -> str:
     """Route to rag (in scope) or response (out of scope).
 
-    Three override paths that route to RAG even when keyword overlap fails:
+    Two override paths that route to RAG even when keyword overlap fails:
     1. Continuation turn: if the thread has existing checkpointed messages,
        short follow-up questions ("how much is it?", "book it") are treated
        as in-scope because the LLM has context from prior turns.
-    2. Guest memories: if the guest has stored memories and the question
-       seems personal (allergy, preference, "remember"), route to RAG so
-       the memories are injected into context.
-    3. Greetings are always out-of-scope regardless.
+    2. Personal statements and introductions ("Hi, my name is Bruce Banner",
+       "I'm allergic to peanuts") route to RAG even on a brand-new thread
+       with no stored memories yet.
     """
     if state.get("in_scope"):
         return "rag"
@@ -503,18 +624,26 @@ def route_after_triage(state: AgentState) -> str:
         logger.info("[triage] in_scope override: continuation turn (%d messages)", len(existing_messages))
         return "rag"
 
-    # Override 2: guest has memories + personal question keywords.
+    # Override 2: personal statements/introductions. Match whole words or
+    # phrases so unrelated topics ("Tell me a joke", "meaning of life") are
+    # still refused. A stored memory is not required: a new guest still gets
+    # to introduce themselves before any facts have been extracted.
     memories = state.get("guest_memories", [])
-    if memories:
-        question_lower = state.get("question", "").lower()
-        personal_indicators = [
-            "my", "i ", "me", "myself", "i'm", "i am", "dietary", "restriction",
-            "allergy", "allergic", "preference", "prefer", "remember", "know",
-            "last time", "previous", "history", "profile", "name", "email",
-        ]
-        if any(ind in question_lower for ind in personal_indicators):
-            logger.info("[triage] in_scope override: guest has %d memories + personal question", len(memories))
-            return "rag"
+    question_lower = state.get("question", "").lower()
+    padded_question = f" {question_lower} "
+    personal_indicators = [
+        "my", "myself", "i'm", "i am", "i have", "i prefer", "i like",
+        "i need", "i want", "i'd", "dietary", "restriction", "allergy",
+        "allergic", "preference", "prefer", "remember", "profile",
+        "name is", "your name", "email", "phone", "about me", "know me",
+        "last time", "previous", "history",
+    ]
+    if any(indicator in padded_question for indicator in personal_indicators):
+        logger.info(
+            "[triage] in_scope override: personal question (memories=%d)",
+            len(memories),
+        )
+        return "rag"
 
     return "response"
 

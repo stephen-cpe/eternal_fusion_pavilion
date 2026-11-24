@@ -48,7 +48,7 @@ class Config:
     enable_thinking: bool = field(default_factory=lambda: _bool("ENABLE_THINKING", True))
 
     # --- Local Ollama (embeddings) — lifted from study-and-learn-project ---
-    ollama_base_url: str = field(default_factory=lambda: os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
+    ollama_base_url: str = field(default_factory=lambda: os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"))
     embedding_model: str = field(default_factory=lambda: os.getenv("OLLAMA_EMBEDDING_MODEL", "qwen3-embedding:0.6b"))
     # qwen3-embedding:0.6b outputs 1024-dim vectors
     embedding_dim: int = field(default_factory=lambda: _int("EMBEDDING_DIM", 1024))
