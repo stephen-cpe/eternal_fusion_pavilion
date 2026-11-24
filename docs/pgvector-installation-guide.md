@@ -271,6 +271,9 @@ From the `backend/ai_agent/` directory, with its virtual environment activated:
 python main.py
 ```
 
+Alternatively, from the repository root, `npm run start:agent` starts the
+agent with its virtual environment automatically.
+
 ### 5.2 Check the health endpoint
 
 In a separate PowerShell window:

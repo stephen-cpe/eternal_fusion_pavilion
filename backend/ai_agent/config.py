@@ -44,7 +44,7 @@ class Config:
     ollama_cloud_base_url: str = field(default_factory=lambda: os.getenv("OLLAMA_CLOUD_BASE_URL", "https://ollama.com"))
     ollama_cloud_api_key: str = field(default_factory=lambda: os.getenv("OLLAMA_CLOUD_API_KEY", ""))
     ollama_timeout: int = field(default_factory=lambda: _int("OLLAMA_TIMEOUT", 300))
-    chat_model: str = field(default_factory=lambda: os.getenv("CHAT_MODEL", "deepseek-v4-flash:cloud"))
+    chat_model: str = field(default_factory=lambda: os.getenv("CHAT_MODEL", "beam:cloud"))
     enable_thinking: bool = field(default_factory=lambda: _bool("ENABLE_THINKING", True))
 
     # --- Local Ollama (embeddings) — lifted from study-and-learn-project ---

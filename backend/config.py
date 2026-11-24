@@ -17,7 +17,9 @@ class Config:
     DB_PASSWORD = os.environ.get('DB_PASSWORD', 'strongpassword')
 
     # --- NEW: SQLAlchemy Configuration ---
-    SQLALCHEMY_DATABASE_URI = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    # SQLAlchemy 2.1 defaults postgresql:// to the psycopg 3 driver; this app
+    # uses psycopg2, so name that driver explicitly.
+    SQLALCHEMY_DATABASE_URI = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     SQLALCHEMY_TRACK_MODIFICATIONS = False # Recommended setting
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_size': 10,

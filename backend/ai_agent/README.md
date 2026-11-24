@@ -52,14 +52,14 @@ the same Postgres database as the Flask app.
 | Component | Technology |
 | :--- | :--- |
 | Service runtime | FastAPI + uvicorn (port 8000) |
-| Chat LLM | Ollama Cloud `deepseek-v4-flash:cloud` |
+| Chat LLM | Ollama Cloud `beam:cloud` |
 | Embeddings | Local Ollama `qwen3-embedding:0.6b` (1024-dim, no API key) |
 | Vector store | pgvector in the existing Postgres database |
 | Agent orchestration | LangGraph 1.x StateGraph with typed state |
 | Streaming | Server-Sent Events via `sse-starlette` |
 | Database | PostgreSQL 18 + pgvector 0.8.6 (independent SQLAlchemy engine) |
 | Tracing | Lightweight local JSON-line tracer (no external dependency) |
-| Tests | pytest (124 tests across 5 phases + thread continuity + checkpointer + summarization) |
+| Tests | pytest (127 tests across 5 phases + thread continuity + checkpointer + summarization) |
 
 ## Prerequisites
 
@@ -76,7 +76,7 @@ the same Postgres database as the Flask app.
   - `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
   - `OLLAMA_CLOUD_BASE_URL` (default: `https://ollama.com`)
   - `OLLAMA_CLOUD_API_KEY` (your Ollama Cloud API key)
-  - `CHAT_MODEL` (default: `deepseek-v4-flash:cloud`)
+  - `CHAT_MODEL` (default: `beam:cloud`)
 
 ## Spin up the isolated environment
 
@@ -93,6 +93,9 @@ pip install -r requirements.txt
 # 3. Run the agent service (port 8000)
 python main.py
 ```
+
+From the repository root, `npm start` starts the Flask API, this agent and the
+frontend together. The command above still runs the agent by itself.
 
 ## Verify the process boundary
 
@@ -131,6 +134,10 @@ Expected response:
 All POST endpoints accept JSON: `{"question": "...", "guest_identifier": "..."}`
 
 ## Run both services together (typical dev session)
+
+From the repository root, `npm start` runs the Flask API, the AI agent and the
+React frontend together. To run the two backend services in separate
+terminals, use the commands below.
 
 Terminal 1 - Flask reservation API (port 5000):
 ```powershell
@@ -194,7 +201,7 @@ $env:AI_MOCK="true"
 python -m pytest tests/ -v
 ```
 
-All 124 tests pass in mock mode (no LLM or network required).
+All 127 tests pass in mock mode (no LLM or network required).
 
 ## File layout
 

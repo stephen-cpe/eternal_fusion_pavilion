@@ -1,7 +1,7 @@
 """Ollama chat client — lifted from notebook-project, adapted for EFP.
 
 Wraps Ollama Cloud's API for the chat model (configured via CHAT_MODEL env
-var; defaults to deepseek-v4-flash:cloud). Thinking is enabled server-side
+var; defaults to beam:cloud). Thinking is enabled server-side
 via the `<|think|>` system-prompt token when ENABLE_THINKING=true. Models
 that understand the token produce internal reasoning; others ignore it
 harmlessly.

@@ -35,10 +35,13 @@ frontend) locally on Windows 11 for development purposes.
 * **Database**: PostgreSQL 18 with pgvector extension
 * **Local Ollama**: running on `http://localhost:11434` with
   `qwen3-embedding:0.6b` pulled
-* **Ollama Cloud account**: for the chat model (`deepseek-v4-flash:cloud`)
+* **Ollama Cloud account**: for the chat model (`beam:cloud`)
 * **Package Managers**: pip (Python), npm (Node.js)
 * **OS**: Windows 11
 
+PostgreSQL and local Ollama must already be running before you run
+`npm start`. The root command starts only the Flask API, the AI agent and the
+frontend; it does not start PostgreSQL or Ollama.
 
 ---
 
@@ -164,8 +167,14 @@ Ollama Cloud for the chat LLM.
     AI_MOCK=false
     OLLAMA_CLOUD_BASE_URL=https://ollama.com
     OLLAMA_CLOUD_API_KEY=your_ollama_cloud_api_key_here
-    CHAT_MODEL=deepseek-v4-flash:cloud
+    CHAT_MODEL=beam:cloud
     ```
+
+> **Note:** Ollama Cloud models are occasionally retired. If chat fails with
+> HTTP 410 and a message that the model "was retired", set
+> `CHAT_MODEL=<new model>` in `backend/.env` and restart the service. No code
+> change is needed. `beam:cloud` was free on Ollama Cloud for a limited time at
+> launch, so its pricing may change.
 
 5. **Run Flask Development Server**:
    ```bash
@@ -203,8 +212,9 @@ Ollama Cloud for the chat LLM.
    This should report "Ingested 40 documents into efp_knowledge_chunks."
 
 5. **Run the AI Agent Service**:
-   - You can run the AI Agent together with Flask using the unified runner
-     (recommended — see "Development Workflow" below), or separately:
+   - From the repository root, `npm start` runs the Flask API, the AI agent
+     and the frontend together (see "Development Workflow" below). To run only
+     the agent service, use:
    ```bash
    python main.py
    ```
@@ -252,7 +262,21 @@ Ollama Cloud for the chat LLM.
 
 ---
 
-## **Step 7: Verify Application**
+## **Step 7: Install Root Tooling**
+
+From the repository root:
+
+```bash
+cd C:\Projects\eternal_fusion_pavilion
+npm install
+```
+
+This installs `concurrently`, which the root `npm start` and `npm test`
+scripts use to run the three services and test suites.
+
+---
+
+## **Step 8: Verify Application**
 
 1. **Test the Frontend**:
    - Open your browser and go to `http://localhost:3000`
@@ -276,17 +300,44 @@ Ollama Cloud for the chat LLM.
 
 ### **Running the Application**
 
-Each time you want to run the application locally, you need three terminal
-windows:
+From the repository root:
 
-1. **Terminal 1 - Flask Backend (port 5000)**:
+```bash
+cd C:\Projects\eternal_fusion_pavilion
+npm start
+```
+
+This starts all three services together:
+
+- Flask API on `http://localhost:5000`
+- AI agent on `http://localhost:8000`
+- React frontend on `http://localhost:3000`
+
+Output lines are prefixed with `[flask]`, `[agent]` or `[web]`. PostgreSQL and
+local Ollama must already be running; `npm start` starts only the three
+services.
+
+### **Running a Single Service**
+
+From the repository root, you can also start one service at a time:
+
+```bash
+npm run start:flask
+npm run start:agent
+npm run start:web
+```
+
+If you prefer separate terminals, activate each virtual environment and run
+the service directly:
+
+1. **Flask Backend (port 5000)**:
    ```bash
    cd C:\Projects\eternal_fusion_pavilion\backend
    venv\Scripts\activate
    python app.py
    ```
 
-2. **Terminal 2 - AI Agent (port 8000)**:
+2. **AI Agent (port 8000)**:
    ```bash
    cd C:\Projects\eternal_fusion_pavilion\backend\ai_agent
    venv\Scripts\activate
@@ -295,44 +346,78 @@ windows:
    `AI_MOCK` is read from `backend/.env` automatically (default: `false`).
    No need to set it manually.
 
-3. **Terminal 3 - Frontend (port 3000)**:
+3. **Frontend (port 3000)**:
    ```bash
    cd C:\Projects\eternal_fusion_pavilion\frontend
    npm start
    ```
 
 ### **Stopping the Application**
-- Press `Ctrl + C` in each terminal to stop the servers
+- Press `Ctrl + C` once in the terminal running `npm start`. All three
+  services stop.
+- In cmd.exe, if it asks `Terminate batch job (Y/N)?`, type `Y` and press
+  Enter.
+- If you started services in separate terminals, press `Ctrl + C` in each
+  terminal.
 
 ---
 
 ## Testing
 
-### Backend Tests (from `backend/` with venv activated)
+### **Run All Test Suites**
+
+From the repository root:
+
 ```bash
-python -m pytest tests/
+npm test
 ```
 
-### AI Agent Tests (from `backend/ai_agent/` with venv activated)
-```bash
-$env:AI_MOCK="true"
-python -m pytest tests/
-```
-All 124 tests pass in mock mode (no LLM or network required).
+This runs the suites in order: Flask, AI agent in mock mode, then frontend.
+The Flask tests use an in-memory SQLite database and never touch your
+PostgreSQL data.
 
-### AI Agent Eval Suite (from `backend/ai_agent/` with venv activated)
+### **Run One Test Suite**
+
+From the repository root:
+
 ```bash
+npm run test:flask
+npm run test:agent
+npm run test:web
+```
+
+`npm run test:agent` sets `AI_MOCK=true` automatically. The AI agent suite
+passes in mock mode (no LLM or network required).
+
+The direct commands still work if you prefer them:
+
+- Flask, from `backend/` with the venv activated: `python -m pytest tests/`
+- AI agent, from `backend/ai_agent/` with the venv activated and
+  `AI_MOCK=true`: `python -m pytest tests/`
+- Frontend, from `frontend/`: `npm test`
+
+### **AI Agent Eval Suite**
+
+From `backend/ai_agent/` with the venv activated:
+
+```powershell
 # Mock mode (tests orchestration + scope logic, no LLM needed)
 python -m evals.eval_runner --mock
+```
 
-# Real mode (needs Flask + Ollama Cloud running)
-set AI_MOCK=false
+Real mode needs Flask and Ollama Cloud running. Set the environment variable
+in the same terminal before running the eval:
+
+PowerShell:
+```powershell
+$env:AI_MOCK="false"
 python -m evals.eval_runner --real
 ```
 
-### Frontend Tests (from `frontend/`)
-```bash
-npm test
+Command Prompt:
+```bat
+set AI_MOCK=false
+python -m evals.eval_runner --real
 ```
 
 ---
@@ -341,6 +426,9 @@ npm test
 
 ```
 eternal_fusion_pavilion/
+├── package.json                # Root scripts: npm start / npm test
+├── scripts/
+│   └── run-python.js           # Runs a Python service with its own venv
 ├── backend/                    # Flask reservation API (port 5000)
 │   ├── app.py                  # Flask app factory + health check
 │   ├── config.py               # Flask config (DB, session, CORS)
@@ -364,7 +452,7 @@ eternal_fusion_pavilion/
 │       ├── knowledge/           # 40 knowledge documents (JSONL)
 │       ├── evals/               # 50-scenario eval suite
 │       ├── tracing.py           # Structured JSON-line tracer
-│       └── tests/               # 124 tests across 5 phases + thread continuity + checkpointer + summarization
+│       └── tests/               # 127 tests across 5 phases + thread continuity + checkpointer + summarization
 ├── frontend/                   # React frontend (port 3000)
 │   └── src/
 │       ├── pages/               # Home, Menu, About, Reservations, Gallery, Admin
@@ -384,14 +472,14 @@ eternal_fusion_pavilion/
 | Component | Technology |
 | :--- | :--- |
 | Service runtime | FastAPI + uvicorn (port 8000) |
-| Chat LLM | Ollama Cloud `deepseek-v4-flash:cloud` |
+| Chat LLM | Ollama Cloud `beam:cloud` |
 | Embeddings | Local Ollama `qwen3-embedding:0.6b` (1024-dim, no API key) |
 | Vector store | pgvector in the existing Postgres database |
 | Agent orchestration | LangGraph 1.x StateGraph with typed state |
 | Streaming | Server-Sent Events via `sse-starlette` |
 | Database | PostgreSQL 18 + pgvector 0.8.6 (independent SQLAlchemy engine) |
 | Tracing | Lightweight local JSON-line tracer (no external dependency) |
-| Tests | pytest (124 tests across 5 phases + thread continuity + checkpointer + summarization) |
+| Tests | pytest (127 tests across 5 phases + thread continuity + checkpointer + summarization) |
 
 ---
 

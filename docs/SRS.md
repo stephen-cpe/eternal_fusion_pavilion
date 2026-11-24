@@ -85,7 +85,7 @@ The EFP is a client-server system composed of four main components:
    state machine with 9 nodes (memory_retrieve, triage, rag, summarize, agent,
    tools, escalation, response, memory_store). Uses local Ollama for
    embeddings (qwen3-embedding:0.6b, 1024-dim), Ollama Cloud for chat
-   (deepseek-v4-flash:cloud), pgvector for knowledge retrieval, and HTTP
+   (beam:cloud), pgvector for knowledge retrieval, and HTTP
    tool wrappers that call the Flask reservation API. Maintains an independent
    SQLAlchemy engine pointing at the same Postgres database. Streams responses
    via SSE (sse-starlette). Uses a Postgres-backed checkpointer
@@ -172,7 +172,7 @@ pages (never in admin). The admin UI components include `AdminNavigation`,
   langchain-ollama, langchain-text-splitters, sse-starlette, SQLAlchemy,
   psycopg2-binary, and python-dotenv. Local Ollama for embeddings
   (qwen3-embedding:0.6b). Ollama Cloud for chat LLM
-   (deepseek-v4-flash:cloud). Testing via pytest (124 tests in mock mode).
+   (beam:cloud). Testing via pytest (127 tests in mock mode).
 * **Database:** PostgreSQL 18 with pgvector 0.8.6 extension.
 
 ### 2.5 Design and Implementation Constraints
@@ -511,7 +511,7 @@ See `backend/utils/room_assignment.py`.)
 
 * **NFR5: Testability**
     * Backend tests: pytest (unit + integration) runnable without Postgres.
-    * AI agent tests: 124 tests in mock mode (no LLM or network required).
+    * AI agent tests: 127 tests in mock mode (no LLM or network required).
     * AI agent eval suite: 50 scenarios with automated assertions.
     * Frontend tests: Vitest + @testing-library/react (66 tests).
     * Tracing: structured JSON-line traces for every agent interaction.

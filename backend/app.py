@@ -19,9 +19,12 @@ from routes import (
 import os
 import socket
 
-def create_app():
+def create_app(config_overrides=None):
     app = Flask(__name__, static_folder='../frontend/build', static_url_path='/')
     app.config.from_object(Config)
+
+    if config_overrides:
+        app.config.update(config_overrides)
 
     init_db(app) # Initialize SQLAlchemy
     Session(app) # Initialize Flask-Session

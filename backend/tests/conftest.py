@@ -3,8 +3,14 @@ Pytest fixtures for the EFP backend.
 
 Strategy:
 - Route/blueprint integration tests use SQLite in-memory via SQLAlchemy (the
-  ORM abstracts the dialect). The psycopg2 connection pool used by the raw-SQL
-  utils is bypassed by monkeypatching get_connection/release_connection.
+  ORM abstracts the dialect). The app fixture passes the test settings into
+  create_app() before Flask-SQLAlchemy and Flask-Session are initialized, so
+  tests never connect to PostgreSQL or write filesystem sessions. The psycopg2
+  connection pool used by the raw-SQL utils is bypassed by monkeypatching
+  get_connection/release_connection, and Flask-Session uses an in-memory
+  cachelib store.
+- SQLite's Date/Time types reject the ISO strings that PostgreSQL accepts, so
+  a before_flush hook coerces those strings before they reach SQLite.
 - Utils unit tests use a FakeCursor stub (see tests/fake_db.py) so no real
   database is required.
 
@@ -12,11 +18,14 @@ We use function-scoped app/client fixtures (create_all / drop_all per test) to
 avoid SQLite locking issues that arise with a long-lived in-memory connection
 shared across tests.
 """
+import datetime as dt
 import os
 import sys
 from pathlib import Path
 
 import pytest
+from sqlalchemy import Date, DateTime, Time, event
+from sqlalchemy.orm import Session, object_mapper
 
 # Make `backend/` importable when pytest runs from the backend dir or repo root.
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -27,9 +36,30 @@ if str(BACKEND_DIR) not in sys.path:
 os.environ["TESTING"] = "true"
 
 
+@event.listens_for(Session, "before_flush")
+def _coerce_iso_temporal_strings(session, flush_context, instances):
+    """Coerce ISO date/time strings so SQLite matches PostgreSQL's behaviour."""
+    for obj in list(session.new) + list(session.dirty):
+        for prop in object_mapper(obj).column_attrs:
+            value = getattr(obj, prop.key, None)
+            if not isinstance(value, str):
+                continue
+            column_type = prop.columns[0].type
+            if isinstance(column_type, DateTime):
+                parsed = dt.datetime.fromisoformat(value)
+            elif isinstance(column_type, Date):
+                parsed = dt.date.fromisoformat(value)
+            elif isinstance(column_type, Time):
+                parsed = dt.time.fromisoformat(value)
+            else:
+                continue
+            setattr(obj, prop.key, parsed)
+
+
 @pytest.fixture()
 def app():
     """Create a fresh Flask app + in-memory SQLite DB per test."""
+    import cachelib
     from app import create_app
     from database import db
 
@@ -37,16 +67,17 @@ def app():
     import database as _database
     _database.connection_pool = None
 
-    app = create_app()
-    app.config.update(
-        TESTING=True,
-        SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
-        SQLALCHEMY_ENGINE_OPTIONS={},
-        SESSION_TYPE="memory",
-        WTF_CSRF_ENABLED=False,
-    )
+    app = create_app({
+        "TESTING": True,
+        "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+        "SQLALCHEMY_ENGINE_OPTIONS": {},
+        "SESSION_TYPE": "cachelib",
+        "SESSION_CACHELIB": cachelib.SimpleCache(),
+        "WTF_CSRF_ENABLED": False,
+    })
 
     with app.app_context():
+        assert db.engine.url.get_backend_name() == "sqlite", "Flask tests must never run against PostgreSQL"
         db.create_all()
         yield app
         db.session.remove()

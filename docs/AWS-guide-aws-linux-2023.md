@@ -16,7 +16,7 @@ provided by Certbot / Let's Encrypt via a free DuckDNS domain.
 - Frontend: React (Vite build) served by Nginx
 - Database: PostgreSQL 18 with pgvector extension
 - Embeddings: Local Ollama (qwen3-embedding:0.6b)
-- Chat LLM: Ollama Cloud (deepseek-v4-flash:cloud)
+- Chat LLM: Ollama Cloud (beam:cloud)
 - WSGI Server: Gunicorn (Flask)
 - ASGI Server: uvicorn (FastAPI agent)
 - Web/Proxy Server: Nginx
@@ -232,7 +232,7 @@ FLASK_DEBUG=False
 AI_MOCK=false
 OLLAMA_CLOUD_BASE_URL=https://ollama.com
 OLLAMA_CLOUD_API_KEY=your_ollama_cloud_api_key_here
-CHAT_MODEL=deepseek-v4-flash:cloud
+CHAT_MODEL=beam:cloud
 ```
 
 ---

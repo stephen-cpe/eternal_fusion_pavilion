@@ -6,22 +6,22 @@
 # NOTE: Pins target Python 3.14 (prebuilt wheels available).
 
 # --- Agent / LLM orchestration ---
-langgraph>=1.2.11
-langgraph-checkpoint-postgres>=3.1.2
-langchain-ollama>=1.1.0
-langchain-text-splitters>=1.1.2
+langgraph==1.2.24
+langgraph-checkpoint-postgres==3.2.1
+langchain-ollama==1.2.0
+langchain-text-splitters==1.2.0
 
 # --- Service runtime ---
-fastapi>=0.141.1
-uvicorn[standard]>=0.52.4
-sse-starlette>=3.4.8
-pydantic>=2.13.4
+fastapi==0.165.0
+uvicorn[standard]==0.54.0
+sse-starlette==3.7.1
+pydantic==2.14.4
 
 # --- Database (independent engine; same Postgres DB as Flask app) ---
-SQLAlchemy>=2.0.52
-psycopg2-binary>=2.9.12
-psycopg[binary]>=3.3.4
+SQLAlchemy==2.1.9
+psycopg2-binary==2.9.13
+psycopg[binary]==3.3.9
 
 # --- Config / env ---
-python-dotenv>=1.2.3
-requests>=2.34.2
+python-dotenv==1.2.4
+requests==2.34.2

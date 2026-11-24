@@ -1,0 +1,20 @@
+{
+  "name": "eternal-fusion-pavilion",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Runs the Flask API, the FastAPI AI agent and the React frontend together.",
+  "scripts": {
+    "start": "concurrently --kill-others --names flask,agent,web --prefix-colors blue,magenta,green \"npm:start:flask\" \"npm:start:agent\" \"npm:start:web\"",
+    "start:flask": "node scripts/run-python.js backend app.py",
+    "start:agent": "node scripts/run-python.js backend/ai_agent main.py",
+    "start:web": "npm --prefix frontend start",
+    "test": "npm run test:flask && npm run test:agent && npm run test:web",
+    "test:flask": "node scripts/run-python.js backend -m pytest tests/",
+    "test:agent": "node scripts/run-python.js backend/ai_agent --env AI_MOCK=true -m pytest tests/",
+    "test:web": "npm --prefix frontend test"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.7"
+  }
+}
