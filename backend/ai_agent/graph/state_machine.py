@@ -55,6 +55,19 @@ logger = logging.getLogger(__name__)
 
 MAX_TOOL_ITERATIONS = 5
 
+# Words that signal the guest is talking about themselves (name, diet,
+# allergies, occasions, contact details, history). Shared by triage and
+# memory_store so both use one definition of "personal".
+PERSONAL_INDICATORS = (
+    "my", "myself", "i'm", "i am", "i have", "i prefer", "i like",
+    "i need", "i want", "i'd", "dietary", "restriction", "allergy",
+    "allergic", "preference", "prefer", "remember", "profile",
+    "name is", "your name", "email", "phone", "about me", "know me",
+    "last time", "previous", "history",
+    "vegetarian", "vegan", "gluten", "halal", "kosher", "intolerant",
+    "birthday", "anniversary",
+)
+
 # Memory extraction runs on one background worker so a slow LLM call never
 # delays the guest's answer. Jobs are tracked so tests and the eval runner
 # can wait for them explicitly.
@@ -68,7 +81,10 @@ def _augment_latest_user_message(messages: list[dict[str, Any]], context: str) -
 
     The checkpointed history keeps only the guest's plain question (Bug 2).
     Context is request-scoped: it is attached only to the copy sent to the
-    LLM, so old context blocks never accumulate in the transcript.
+    LLM, so old context blocks never accumulate in the transcript. The
+    instruction mentions the conversation so far because earlier assistant
+    answers are part of the history and may resolve a follow-up even when the
+    fresh retrieval chunks do not.
     """
     if not context:
         return list(messages)
@@ -82,14 +98,38 @@ def _augment_latest_user_message(messages: list[dict[str, Any]], context: str) -
         augmented[index] = {
             **message,
             "content": (
-                f"Use the following context to answer the question. "
-                f"If the answer is not in the context, say you don't know.\n\n"
+                f"Use the context below and the conversation so far. "
+                f"If neither contains the answer, say you don't know.\n\n"
                 f"Context:\n{context}\n\n"
                 f"Question: {question}"
             ),
         }
         break
     return augmented
+
+
+def _previous_user_question(messages: list[dict[str, Any]] | None) -> str:
+    """Return the most recent user message already in the history, if any."""
+    for message in reversed(messages or []):
+        if message.get("role") == "user":
+            return message.get("content", "") or ""
+    return ""
+
+
+def _merge_rag_results(
+    result_lists: list[list[dict[str, Any]]],
+    top_k: int,
+) -> list[dict[str, Any]]:
+    """Merge retrieval lists by chunk id, keep the higher score, sort, cap."""
+    best_by_id: dict[str, dict[str, Any]] = {}
+    for results in result_lists:
+        for result in results:
+            chunk_id = result.get("id", "")
+            current = best_by_id.get(chunk_id)
+            if current is None or result.get("score", 0.0) > current.get("score", 0.0):
+                best_by_id[chunk_id] = result
+    merged = sorted(best_by_id.values(), key=lambda r: r.get("score", 0.0), reverse=True)
+    return merged[:top_k]
 
 
 def _forget_memory_job(future: Future) -> None:
@@ -149,10 +189,24 @@ class AgentState(TypedDict, total=False):
     start_time: float
 
 
-# Threshold: when messages exceed this count, summarize older messages.
-SUMMARY_THRESHOLD = 12
-# Number of recent messages to keep verbatim (system + last few turns).
-KEEP_RECENT = 6
+# Summarize when the history holds more than this many conversation messages.
+# Only guest questions and assistant answers count; system messages, tool
+# results and assistant tool-call messages do not (tool-heavy turns would
+# otherwise trigger summarization after a few exchanges).
+SUMMARY_THRESHOLD_CONVERSATION_MESSAGES = 16
+# Keep the last 6 conversation messages (3 exchanges) verbatim. Any tool and
+# tool-call messages between them travel with the window.
+KEEP_RECENT_CONVERSATION_MESSAGES = 6
+
+
+def _is_conversation_message(message: dict[str, Any]) -> bool:
+    """True for guest questions and assistant answers (not tool plumbing)."""
+    role = message.get("role")
+    if role == "user":
+        return True
+    if role == "assistant":
+        return bool((message.get("content") or "").strip()) and not message.get("tool_calls")
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -231,8 +285,28 @@ def rag_node(state: AgentState) -> dict[str, Any]:
     the correct year when parsing relative dates ("August 24", "next Friday").
     """
     retriever = get_rag_retriever()
-    results = retriever.retrieve_with_sources(state["question"])
+    config = get_config()
+    question = state["question"]
+
+    # Always retrieve for the current question. On a follow-up, also retrieve
+    # for the previous question joined with the current one so pronouns and
+    # "those" resolve to the same part of the menu (e.g. desserts).
+    results = retriever.retrieve_with_sources(question)
+    previous_question = _previous_user_question(state.get("messages"))
+    if previous_question:
+        followup_results = retriever.retrieve_with_sources(f"{previous_question}\n{question}")
+        results = _merge_rag_results(
+            [results, followup_results],
+            top_k=config.rag_top_k,
+        )
+
     context = build_context_string(results)
+
+    chunk_names = ", ".join(
+        result.get("name") or result.get("section") or result.get("id") or "unknown"
+        for result in results
+    )
+    logger.info("[rag] chunks: %s", chunk_names or "(none)")
 
     # Inject current date so the LLM knows what year it is.
     from datetime import date as _date
@@ -249,7 +323,6 @@ def rag_node(state: AgentState) -> dict[str, Any]:
         context += f"\n\n[Guest Profile — what we know about this guest]\n{memory_text}"
         logger.info("[rag] injected %d guest memories into context", len(memories))
 
-    config = get_config()
     existing_messages = state.get("messages")
 
     if existing_messages:
@@ -297,36 +370,50 @@ def rag_node(state: AgentState) -> dict[str, Any]:
 def summarize_node(state: AgentState) -> dict[str, Any]:
     """Summarize older messages when the conversation gets too long.
 
-    Roadmap item 3: prevents unbounded context window growth. When the
-    message count exceeds SUMMARY_THRESHOLD, this node:
-    1. Takes the older messages (everything except the system prompt + the
-       last KEEP_RECENT messages).
+    Roadmap item 3: prevents unbounded context window growth. Only real
+    conversation messages count toward the threshold: guest ``user`` messages
+    and ``assistant`` messages that have text and no tool calls. System
+    messages, tool results and assistant tool-call messages are ignored, so a
+    tool-heavy turn does not age the conversation faster than a plain one.
+
+    When the conversation count exceeds
+    SUMMARY_THRESHOLD_CONVERSATION_MESSAGES (16, i.e. 8 exchanges), this node:
+    1. Takes the older messages (everything except the system prompt and the
+       last KEEP_RECENT_CONVERSATION_MESSAGES conversation messages).
     2. Calls the LLM to summarize them into a compact paragraph.
-    3. Replaces the message list with: [system_prompt_with_summary] + [recent messages].
+    3. Replaces the message list with: [system_prompt_with_summary] + [recent
+       messages]. The recent window keeps the tool and tool-call messages that
+       sit between its conversation messages, and starts at a ``user`` message
+       so it is a usable turn.
 
     The summary is stored in state["conversation_summary"] so it persists
     across turns via the checkpointer.
     """
     messages = state.get("messages", [])
-    if len(messages) <= SUMMARY_THRESHOLD:
-        # Not enough messages to warrant summarization.
+    conversation_positions = [
+        index for index, message in enumerate(messages)
+        if _is_conversation_message(message)
+    ]
+    if len(conversation_positions) <= SUMMARY_THRESHOLD_CONVERSATION_MESSAGES:
+        # Not enough conversation to warrant summarization.
         return {}
 
-    # Keep the system prompt (messages[0]) and find a cut that starts the
-    # recent window at a user message. Starting with an orphan tool result
-    # or an assistant tool-call message gives the model an unusable turn.
+    # Start at the 6th-from-last conversation message so the window holds the
+    # last 3 exchanges. If that lands on an assistant answer, move forward to
+    # the next user message; a window that starts mid-exchange is unusable.
+    cut = len(conversation_positions) - KEEP_RECENT_CONVERSATION_MESSAGES
+    while cut < len(conversation_positions):
+        recent_start = conversation_positions[cut]
+        if messages[recent_start].get("role") == "user":
+            break
+        cut += 1
+    else:
+        # No user message left for a safe recent window.
+        return {}
+
+    # Keep the system prompt (messages[0]). Everything between it and the
+    # recent window is summarized, including tool plumbing.
     system_msg = messages[0]
-    recent_start = max(1, len(messages) - KEEP_RECENT)
-    while recent_start < len(messages) and messages[recent_start].get("role") != "user":
-        recent_start += 1
-    if recent_start >= len(messages):
-        # No user message at or after the nominal cut — search backwards.
-        recent_start = max(1, len(messages) - KEEP_RECENT)
-        while recent_start > 1 and messages[recent_start].get("role") != "user":
-            recent_start -= 1
-    if recent_start <= 1:
-        return {}
-
     recent_messages = messages[recent_start:]
     older_messages = messages[1:recent_start]
 
@@ -585,6 +672,22 @@ def memory_store_node(state: AgentState) -> dict[str, Any]:
     if not question or not answer:
         return {}
 
+    # Skip turns with nothing to remember: a plain menu/story/location
+    # question has no personal indicator, and no reservation was completed.
+    padded_question = f" {question.lower()} "
+    has_personal_indicator = any(
+        indicator in padded_question for indicator in PERSONAL_INDICATORS
+    )
+    booking_succeeded = any(
+        tr.get("name") == "create_reservation"
+        and isinstance(tr.get("result"), dict)
+        and tr["result"].get("success")
+        for tr in state.get("tool_results", [])
+    )
+    if not has_personal_indicator and not booking_succeeded:
+        logger.info("[memory_store] skipped: nothing personal in this turn")
+        return {}
+
     # Build a simple transcript for extraction.
     transcript = f"Guest: {question}\nConcierge: {answer}"
     if state.get("tool_results"):
@@ -631,14 +734,7 @@ def route_after_triage(state: AgentState) -> str:
     memories = state.get("guest_memories", [])
     question_lower = state.get("question", "").lower()
     padded_question = f" {question_lower} "
-    personal_indicators = [
-        "my", "myself", "i'm", "i am", "i have", "i prefer", "i like",
-        "i need", "i want", "i'd", "dietary", "restriction", "allergy",
-        "allergic", "preference", "prefer", "remember", "profile",
-        "name is", "your name", "email", "phone", "about me", "know me",
-        "last time", "previous", "history",
-    ]
-    if any(indicator in padded_question for indicator in personal_indicators):
+    if any(indicator in padded_question for indicator in PERSONAL_INDICATORS):
         logger.info(
             "[triage] in_scope override: personal question (memories=%d)",
             len(memories),

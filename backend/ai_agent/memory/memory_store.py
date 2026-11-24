@@ -35,8 +35,13 @@ class MemoryStore:
         memory_type: str,
         content: str,
         embed: bool = True,
+        embedding: list[float] | None = None,
     ) -> dict[str, Any]:
         """Insert a new memory. If embed=True, compute a vector embedding.
+
+        Pass ``embedding`` when the caller already computed the vector (the
+        extractor embeds each fact once for both dedupe and insert). Existing
+        callers can omit it and keep the old behaviour.
 
         Returns the stored memory as a dict.
         """
@@ -45,7 +50,10 @@ class MemoryStore:
 
         embedding_str = None
         if embed and content.strip():
-            vec = self._embedder.embed_query(content)
+            if embedding is not None:
+                vec = embedding
+            else:
+                vec = self._embedder.embed_query(content)
             embedding_str = "[" + ",".join(f"{x:.8f}" for x in vec) + "]"
 
         sql = text("""
@@ -98,9 +106,13 @@ class MemoryStore:
         guest_identifier: str,
         query: str,
         top_k: int = 5,
+        embedding: list[float] | None = None,
     ) -> list[dict[str, Any]]:
-        """Semantic search over a guest's memories using pgvector cosine distance."""
-        query_vec = self._embedder.embed_query(query)
+        """Semantic search over a guest's memories using pgvector cosine distance.
+
+        Pass ``embedding`` to reuse a vector the caller already computed.
+        """
+        query_vec = embedding if embedding is not None else self._embedder.embed_query(query)
         vec_str = "[" + ",".join(f"{x:.8f}" for x in query_vec) + "]"
 
         sql = text("""

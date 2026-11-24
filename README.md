@@ -35,7 +35,7 @@ frontend) locally on Windows 11 for development purposes.
 * **Database**: PostgreSQL 18 with pgvector extension
 * **Local Ollama**: running on `http://localhost:11434` with
   `qwen3-embedding:0.6b` pulled
-* **Ollama Cloud account**: for the chat model (`beam:cloud`)
+* **Ollama Cloud account**: for the chat model (`glm-5.3-flash:cloud`)
 * **Package Managers**: pip (Python), npm (Node.js)
 * **OS**: Windows 11
 
@@ -167,14 +167,14 @@ Ollama Cloud for the chat LLM.
     AI_MOCK=false
     OLLAMA_CLOUD_BASE_URL=https://ollama.com
     OLLAMA_CLOUD_API_KEY=your_ollama_cloud_api_key_here
-    CHAT_MODEL=beam:cloud
+    CHAT_MODEL=glm-5.3-flash:cloud
     ```
 
 > **Note:** Ollama Cloud models are occasionally retired. If chat fails with
 > HTTP 410 and a message that the model "was retired", set
 > `CHAT_MODEL=<new model>` in `backend/.env` and restart the service. No code
-> change is needed. `beam:cloud` was free on Ollama Cloud for a limited time at
-> launch, so its pricing may change.
+> change is needed. `beam:cloud` also passed the project's checks in November
+> 2026, so it can be used as a fallback by setting `CHAT_MODEL=beam:cloud`.
 
 5. **Run Flask Development Server**:
    ```bash
@@ -452,7 +452,7 @@ eternal_fusion_pavilion/
 │       ├── knowledge/           # 40 knowledge documents (JSONL)
 │       ├── evals/               # 50-scenario eval suite
 │       ├── tracing.py           # Structured JSON-line tracer
-│       └── tests/               # 156 tests: phases, thread continuity, checkpointer, summarization, chat fixes
+│       └── tests/               # 169 tests: phases, thread continuity, checkpointer, summarization, chat fixes
 ├── frontend/                   # React frontend (port 3000)
 │   └── src/
 │       ├── pages/               # Home, Menu, About, Reservations, Gallery, Admin
@@ -472,14 +472,14 @@ eternal_fusion_pavilion/
 | Component | Technology |
 | :--- | :--- |
 | Service runtime | FastAPI + uvicorn (port 8000) |
-| Chat LLM | Ollama Cloud `beam:cloud` |
+| Chat LLM | Ollama Cloud `glm-5.3-flash:cloud` |
 | Embeddings | Local Ollama `qwen3-embedding:0.6b` (1024-dim, no API key) |
 | Vector store | pgvector in the existing Postgres database |
 | Agent orchestration | LangGraph 1.x StateGraph with typed state |
 | Streaming | Server-Sent Events via `sse-starlette` |
 | Database | PostgreSQL 18 + pgvector 0.8.6 (independent SQLAlchemy engine) |
 | Tracing | Lightweight local JSON-line tracer (no external dependency) |
-| Tests | pytest (156 tests: phases, thread continuity, checkpointer, summarization, chat fixes) |
+| Tests | pytest (169 tests: phases, thread continuity, checkpointer, summarization, chat fixes) |
 
 ---
 

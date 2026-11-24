@@ -85,7 +85,7 @@ The EFP is a client-server system composed of four main components:
    state machine with 9 nodes (memory_retrieve, triage, rag, summarize, agent,
    tools, escalation, response, memory_store). Uses local Ollama for
    embeddings (qwen3-embedding:0.6b, 1024-dim), Ollama Cloud for chat
-   (beam:cloud), pgvector for knowledge retrieval, and HTTP
+   (glm-5.3-flash:cloud), pgvector for knowledge retrieval, and HTTP
    tool wrappers that call the Flask reservation API. Maintains an independent
    SQLAlchemy engine pointing at the same Postgres database. Streams responses
    via SSE (sse-starlette). Uses a Postgres-backed checkpointer
@@ -164,7 +164,7 @@ pages (never in admin). The admin UI components include `AdminNavigation`,
   with React 19, Vite, Tailwind CSS 4, @tanstack/react-query, axios,
   react-toastify, framer-motion, lucide-react, react-markdown, and remark-gfm.
   Vite proxies `/api/ai/*` to port 8000 and `/api/*` to port 5000 during
-  development. Testing via Vitest + @testing-library/react (66 tests).
+  development. Testing via Vitest + @testing-library/react (72 tests).
 * **Flask Backend:** Python 3.14+ with Flask 3.1, Flask-Session 0.8,
   Flask-SQLAlchemy 3.1, Flask-Cors 6.0, bcrypt, and psycopg2-binary. Gunicorn
   as the WSGI server in production. Testing via pytest + pytest-flask.
@@ -172,7 +172,7 @@ pages (never in admin). The admin UI components include `AdminNavigation`,
   langchain-ollama, langchain-text-splitters, sse-starlette, SQLAlchemy,
   psycopg2-binary, and python-dotenv. Local Ollama for embeddings
   (qwen3-embedding:0.6b). Ollama Cloud for chat LLM
-   (beam:cloud). Testing via pytest (127 tests in mock mode).
+   (glm-5.3-flash:cloud). Testing via pytest (169 tests in mock mode).
 * **Database:** PostgreSQL 18 with pgvector 0.8.6 extension.
 
 ### 2.5 Design and Implementation Constraints
@@ -395,12 +395,15 @@ See `backend/utils/room_assignment.py`.)
 * **FR11.9: Conversation Summarization**
     * The agent shall include a `summarize_node` in the StateGraph that runs
       after `rag` and before `agent`.
-    * When the message count exceeds 12, the node shall summarize the older
-      messages into a concise LLM-generated summary.
+    * When the number of conversation messages exceeds 16 (8 exchanges), the
+      node shall summarize the older messages into a concise LLM-generated
+      summary. Conversation messages are user messages and assistant messages
+      with text and no tool calls; system, tool and assistant tool-call
+      messages are not counted.
     * The summary shall be injected into the system prompt as
       `[Conversation Summary]`.
-    * The last 6 messages shall be kept verbatim (system prompt + recent
-      turns).
+    * The last 6 conversation messages (3 exchanges) shall be kept verbatim,
+      together with the tool and tool-call messages between them.
     * The `conversation_summary` state field shall persist across turns via
       the checkpointer.
     * This prevents unbounded context window growth, controls latency, and
@@ -501,7 +504,7 @@ See `backend/utils/room_assignment.py`.)
     * Foreign key constraints ensure data integrity.
     * The AI agent degrades gracefully on LLM provider outage (503 response).
     * The AI agent enforces a max-iteration limit (3) to prevent infinite loops.
-    * 124 backend agent tests + 66 frontend tests act as a regression net.
+    * 169 backend agent tests + 72 frontend tests act as a regression net.
 
 * **NFR4: Performance**
     * Database indexes on all foreign keys and frequently queried columns.
@@ -511,7 +514,7 @@ See `backend/utils/room_assignment.py`.)
 
 * **NFR5: Testability**
     * Backend tests: pytest (unit + integration) runnable without Postgres.
-    * AI agent tests: 127 tests in mock mode (no LLM or network required).
+    * AI agent tests: 169 tests in mock mode (no LLM or network required).
     * AI agent eval suite: 50 scenarios with automated assertions.
-    * Frontend tests: Vitest + @testing-library/react (66 tests).
+    * Frontend tests: Vitest + @testing-library/react (72 tests).
     * Tracing: structured JSON-line traces for every agent interaction.

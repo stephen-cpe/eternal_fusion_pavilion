@@ -1,7 +1,7 @@
 """Ollama chat client — lifted from notebook-project, adapted for EFP.
 
 Wraps Ollama Cloud's API for the chat model (configured via CHAT_MODEL env
-var; defaults to beam:cloud). Thinking is enabled server-side
+var; defaults to glm-5.3-flash:cloud). Thinking is enabled server-side
 via the `<|think|>` system-prompt token when ENABLE_THINKING=true. Models
 that understand the token produce internal reasoning; others ignore it
 harmlessly.
@@ -99,11 +99,22 @@ class OllamaClient:
         self._api_key: str = self._config.ollama_cloud_api_key
         self._timeout: int = self._config.ollama_timeout
 
-    def chat(self, messages: list[dict[str, str]]) -> str:
-        """Send messages and return the full response text. Retries once."""
+    def chat(
+        self,
+        messages: list[dict[str, str]],
+        timeout: int | None = None,
+        retries: int = 1,
+    ) -> str:
+        """Send messages and return the full response text.
+
+        ``timeout`` overrides the configured request timeout; ``retries`` is
+        the number of retries after the first attempt. The defaults preserve
+        the original behaviour (configured timeout, one retry). Background
+        memory extraction passes a longer timeout and ``retries=0``.
+        """
         if self._mock:
             return self._mock_chat(messages)
-        return self._chat_with_retry(messages)
+        return self._chat_with_retry(messages, timeout=timeout, retries=retries)
 
     def stream(self, messages: list[dict[str, str]]) -> Generator[str]:
         """Stream response tokens as a generator of string chunks."""
@@ -125,11 +136,16 @@ class OllamaClient:
             return self._mock_chat_with_tools(messages, tools)
         return self._chat_with_tools_retry(messages, tools)
 
-    def _chat_with_retry(self, messages: list[dict[str, str]]) -> str:
+    def _chat_with_retry(
+        self,
+        messages: list[dict[str, str]],
+        timeout: int | None = None,
+        retries: int = 1,
+    ) -> str:
         last_exc: Exception | None = None
-        for attempt in range(2):
+        for attempt in range(retries + 1):
             try:
-                return self._real_chat(messages)
+                return self._real_chat(messages, timeout=timeout)
             except (ConnectionError, TimeoutError, requests.ConnectionError) as exc:
                 last_exc = exc
                 logger.warning("Chat attempt %d failed: %s", attempt + 1, exc)
@@ -165,7 +181,7 @@ class OllamaClient:
                 logger.warning("Stream attempt %d failed: %s", attempt + 1, exc)
         raise AIModelUnavailableError(f"Stream failed after retry: {last_exc}")
 
-    def _real_chat(self, messages: list[dict[str, str]]) -> str:
+    def _real_chat(self, messages: list[dict[str, str]], timeout: int | None = None) -> str:
         url = f"{self._base_url}/api/chat"
         headers = {"Content-Type": "application/json"}
         if self._api_key:
@@ -175,13 +191,14 @@ class OllamaClient:
             "messages": messages,
             "stream": False,
         }
+        request_timeout = timeout if timeout is not None else self._timeout
         t0 = time.time()
-        logger.info("Ollama chat request -> %s model=%s timeout=%ds", url, self.model, self._timeout)
+        logger.info("Ollama chat request -> %s model=%s timeout=%ds", url, self.model, request_timeout)
         try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=self._timeout)
+            resp = requests.post(url, json=payload, headers=headers, timeout=request_timeout)
             resp.raise_for_status()
         except requests.Timeout as exc:
-            raise AITimeoutError(f"Ollama Cloud timed out after {self._timeout}s") from exc
+            raise AITimeoutError(f"Ollama Cloud timed out after {request_timeout}s") from exc
         except requests.ConnectionError as exc:
             raise ConnectionError(f"Ollama Cloud unreachable: {exc}") from exc
         except requests.HTTPError as exc:

@@ -90,7 +90,7 @@ def test_rag_node_first_turn_stores_plain_question():
 
     assert user_message["role"] == "user"
     assert user_message["content"] == "How much is the wagyu?"
-    assert "Use the following context" not in user_message["content"]
+    assert "Use the context below" not in user_message["content"]
     assert "Context:" not in user_message["content"]
     # The context still exists in state for the current request.
     assert result["context"]
@@ -115,7 +115,7 @@ def test_rag_node_continuation_stores_plain_question_only():
         "content": "Which of those is gluten free?",
     }
     for message in result["messages"]:
-        assert "Use the following context" not in message.get("content", "")
+        assert "Use the context below" not in message.get("content", "")
 
 
 def test_augment_context_copies_messages_and_keeps_history_plain():
@@ -130,7 +130,9 @@ def test_augment_context_copies_messages_and_keeps_history_plain():
     augmented = _augment_latest_user_message(messages, "CTX")
 
     assert messages[-1]["content"] == "second"
-    assert augmented[-1]["content"].startswith("Use the following context")
+    assert augmented[-1]["content"].startswith(
+        "Use the context below and the conversation so far."
+    )
     assert "Context:\nCTX" in augmented[-1]["content"]
     assert "Question: second" in augmented[-1]["content"]
     assert augmented[1]["content"] == "first"
@@ -191,7 +193,7 @@ def test_summarizer_prompt_contains_guest_questions():
     messages.append({"role": "assistant", "content": "Tiramisu and Matcha Flan."})
     messages.append({"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "check_availability", "arguments": {}}}]})
     messages.append({"role": "tool", "name": "check_availability", "content": '{"success": true, "slots": [1, 2, 3]}'})
-    for i in range(12):
+    for i in range(18):
         messages.append({
             "role": "user" if i % 2 == 0 else "assistant",
             "content": f"filler {i}",
@@ -213,18 +215,17 @@ def test_summarizer_cut_starts_recent_window_at_user():
     fake_client = MagicMock()
     fake_client.chat.return_value = "summary"
 
-    # 16 messages. The nominal cut (len - KEEP_RECENT = 10) lands on a tool
-    # result, followed by an assistant tool-call message. The cut must move
-    # forward to the next user message.
+    # Eight plain exchanges (16 conversation messages), then a tool round
+    # that follows an assistant answer, then the newest exchange. The nominal
+    # cut lands on a user message, so the window starts cleanly.
     messages = [{"role": "system", "content": "system"}]
-    for i in range(9):
-        messages.append({"role": "user" if i % 2 == 0 else "assistant", "content": f"msg {i}"})
-    messages.append({"role": "tool", "name": "get_locations", "content": "[]"})       # index 10
-    messages.append({"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "get_locations"}}]})  # 11
-    messages.append({"role": "user", "content": "latest question"})                    # 12
-    messages.append({"role": "assistant", "content": "latest answer"})                 # 13
-    messages.append({"role": "user", "content": "final question"})                     # 14
-    messages.append({"role": "assistant", "content": "final answer"})                  # 15
+    for i in range(8):
+        messages.append({"role": "user", "content": f"question {i}"})
+        messages.append({"role": "assistant", "content": f"answer {i}"})
+    messages.append({"role": "tool", "name": "get_locations", "content": "[]"})
+    messages.append({"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "get_locations"}}]})
+    messages.append({"role": "user", "content": "latest question"})
+    messages.append({"role": "assistant", "content": "latest answer"})
 
     with patch.object(sm, "get_ollama_client", return_value=fake_client):
         result = sm.summarize_node({"messages": messages})
@@ -232,8 +233,9 @@ def test_summarizer_cut_starts_recent_window_at_user():
     recent = result["messages"][1:]
     assert recent, "recent window should not be empty"
     assert recent[0]["role"] == "user"
-    assert all(m.get("role") != "tool" for m in recent)
     assert not (recent[0]["role"] == "assistant" and recent[0].get("tool_calls"))
+    # Tool messages between kept exchanges travel with the window.
+    assert any(m.get("role") == "tool" for m in recent)
 
 
 def test_summarizer_does_not_stack_summaries():
@@ -247,7 +249,7 @@ def test_summarizer_does_not_stack_summaries():
         "role": "system",
         "content": "system prompt\n\n[Conversation Summary — what happened so far]\nold summary text",
     }]
-    for i in range(14):
+    for i in range(18):
         messages.append({
             "role": "user" if i % 2 == 0 else "assistant",
             "content": f"msg {i}",
@@ -320,8 +322,8 @@ def test_wait_for_memory_jobs_waits_for_background_work(monkeypatch):
 
     sm.memory_store_node({
         "guest_identifier": "guest-2",
-        "question": "question",
-        "answer": "answer",
+        "question": "I'm allergic to peanuts",
+        "answer": "Noted.",
     })
 
     assert started.wait(2), "background job should start"
@@ -390,7 +392,7 @@ def test_extraction_prompt_includes_known_facts():
 
     captured = {}
 
-    def fake_chat(messages):
+    def fake_chat(messages, **kwargs):
         captured["messages"] = messages
         return "[]"
 
@@ -417,10 +419,10 @@ def test_extract_and_store_skips_normalized_duplicate(monkeypatch):
         def get_memories(self, guest_identifier, limit=20):
             return [{"memory_type": "procedural", "content": "Name: Bruce Banner"}]
 
-        def search_memories(self, guest_identifier, query, top_k=5):
+        def search_memories(self, guest_identifier, query, top_k=5, embedding=None):
             return []
 
-        def store_memory(self, guest_identifier, memory_type, content):
+        def store_memory(self, guest_identifier, memory_type, content, embedding=None):
             record = {
                 "memory_type": memory_type,
                 "content": content,
@@ -454,10 +456,10 @@ def test_extract_and_store_skips_semantic_duplicate(monkeypatch):
         def get_memories(self, guest_identifier, limit=20):
             return []
 
-        def search_memories(self, guest_identifier, query, top_k=5):
+        def search_memories(self, guest_identifier, query, top_k=5, embedding=None):
             return [{"content": "existing", "score": 0.95}]
 
-        def store_memory(self, guest_identifier, memory_type, content):
+        def store_memory(self, guest_identifier, memory_type, content, embedding=None):
             self.stored.append(content)
             return {"content": content}
 

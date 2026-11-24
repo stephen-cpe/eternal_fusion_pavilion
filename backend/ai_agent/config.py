@@ -44,7 +44,7 @@ class Config:
     ollama_cloud_base_url: str = field(default_factory=lambda: os.getenv("OLLAMA_CLOUD_BASE_URL", "https://ollama.com"))
     ollama_cloud_api_key: str = field(default_factory=lambda: os.getenv("OLLAMA_CLOUD_API_KEY", ""))
     ollama_timeout: int = field(default_factory=lambda: _int("OLLAMA_TIMEOUT", 300))
-    chat_model: str = field(default_factory=lambda: os.getenv("CHAT_MODEL", "beam:cloud"))
+    chat_model: str = field(default_factory=lambda: os.getenv("CHAT_MODEL", "glm-5.3-flash:cloud"))
     enable_thinking: bool = field(default_factory=lambda: _bool("ENABLE_THINKING", True))
 
     # --- Local Ollama (embeddings) — lifted from study-and-learn-project ---
@@ -56,6 +56,11 @@ class Config:
     # --- RAG ---
     rag_top_k: int = field(default_factory=lambda: _int("RAG_TOP_K", 5))
     knowledge_path: str = field(default_factory=lambda: os.path.join(AGENT_DIR, "knowledge", "efp_knowledge.jsonl"))
+
+    # --- Memory ---
+    # Ceiling for the background extraction call. Well above a normal chat
+    # call; a timeout drops the facts for that turn instead of retrying.
+    memory_extraction_timeout: int = field(default_factory=lambda: _int("MEMORY_EXTRACTION_TIMEOUT", 90))
 
     # --- Service ---
     service_port: int = field(default_factory=lambda: _int("AI_SERVICE_PORT", 8000))
@@ -79,6 +84,7 @@ class Config:
             "embedding_model": self.embedding_model,
             "embedding_dim": self.embedding_dim,
             "rag_top_k": self.rag_top_k,
+            "memory_extraction_timeout": self.memory_extraction_timeout,
             "service_port": self.service_port,
         }
 

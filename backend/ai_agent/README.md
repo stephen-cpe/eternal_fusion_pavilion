@@ -53,14 +53,14 @@ the same Postgres database as the Flask app.
 | Component | Technology |
 | :--- | :--- |
 | Service runtime | FastAPI + uvicorn (port 8000) |
-| Chat LLM | Ollama Cloud `beam:cloud` |
+| Chat LLM | Ollama Cloud `glm-5.3-flash:cloud` |
 | Embeddings | Local Ollama `qwen3-embedding:0.6b` (1024-dim, no API key) |
 | Vector store | pgvector in the existing Postgres database |
 | Agent orchestration | LangGraph 1.x StateGraph with typed state |
 | Streaming | Server-Sent Events via `sse-starlette` |
 | Database | PostgreSQL 18 + pgvector 0.8.6 (independent SQLAlchemy engine) |
 | Tracing | Lightweight local JSON-line tracer (no external dependency) |
-| Tests | pytest (156 tests: phases, thread continuity, checkpointer, summarization, chat fixes) |
+| Tests | pytest (169 tests: phases, thread continuity, checkpointer, summarization, chat fixes) |
 
 ## Prerequisites
 
@@ -77,7 +77,7 @@ the same Postgres database as the Flask app.
   - `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
   - `OLLAMA_CLOUD_BASE_URL` (default: `https://ollama.com`)
   - `OLLAMA_CLOUD_API_KEY` (your Ollama Cloud API key)
-  - `CHAT_MODEL` (default: `beam:cloud`)
+  - `CHAT_MODEL` (default: `glm-5.3-flash:cloud`)
 
 ## Spin up the isolated environment
 
@@ -202,7 +202,7 @@ $env:AI_MOCK="true"
 python -m pytest tests/ -v
 ```
 
-All 156 tests pass in mock mode (no LLM or network required).
+All 169 tests pass in mock mode (no LLM or network required).
 
 ## File layout
 
@@ -251,7 +251,14 @@ backend/ai_agent/
     ├── test_phase3.py         # 18 tests: LangGraph state, routing, nodes, streaming
     ├── test_phase4.py         # 18 tests: memory store, extractor, graph nodes
     ├── test_phase5.py         # 20 tests: tracer, eval dataset, assertions, runner
-    └── test_chat_fixes.py     # 29 tests: history, context, summarization, background memory, dedupe, routing, tool cap
+    ├── test_chat_fixes.py     # 29 tests: history, context, summarization, background memory, dedupe, routing, tool cap
+    ├── test_summarization.py  # 8 tests: conversation-message threshold, recent window, no stacking
+    ├── test_followup_retrieval.py # 4 tests: two-query follow-ups, merge, prompt wording
+    ├── test_memory_tuning.py  # 9 tests: extraction skip, timeout, one embedding per fact, prompt rules
+    ├── test_thread_continuity.py # 8 tests: checkpointed multi-turn history
+    ├── test_thread_id.py      # 8 tests: per-conversation thread ids
+    ├── test_streaming_interrupt.py # 3 tests: HITL interrupt frames
+    └── test_postgres_checkpointer.py # 4 tests: PostgresSaver setup and fallback
 ```
 
 ## LangGraph flow
@@ -272,12 +279,19 @@ START -> memory_retrieve -> triage -> [in_scope?] -> rag -> summarize -> agent
   Personal questions from known guests are routed to RAG even if keywords
   don't match (memory-aware override).
 - **rag**: retrieves top-k context from pgvector, injects guest memories.
+  On a follow-up it also retrieves for the previous question joined with the
+  current one, then merges both lists by chunk id (higher score wins) and
+  keeps `rag_top_k`. Logs the retrieved chunk names at INFO.
   On continuation turns (same `thread_id`), appends the guest's plain
   question to the checkpointed conversation history instead of replacing it.
   Injects the current date so the LLM uses the correct year.
-- **summarize**: when the message count exceeds 12, compresses older
-  messages into a concise LLM-generated summary injected into the system
-  prompt. Prevents unbounded context window growth (see below).
+- **summarize**: when the history holds more than 16 conversation messages
+  (8 exchanges), compresses older messages into a concise LLM-generated
+  summary injected into the system prompt. Only guest `user` messages and
+  `assistant` messages with text and no tool calls count; system messages,
+  tool results and assistant tool-call messages do not. The last 6
+  conversation messages (3 exchanges) stay verbatim with their tool messages.
+  Prevents unbounded context window growth (see below).
 - **agent**: calls LLM with tools; decides next step (tool call or answer).
   Context for the current request is attached to the latest user message on
   every call, including iterations of the tool loop.
@@ -287,8 +301,11 @@ START -> memory_retrieve -> triage -> [in_scope?] -> rag -> summarize -> agent
 - **escalation**: HITL interrupt for > 12 party size, block overrides, etc.
 - **response**: formats the final answer and appends the assistant reply to
   the conversation history (except on the out-of-scope path).
-- **memory_store**: queues fact extraction on a background worker and returns
-  immediately; the guest's answer is not held back by memory work.
+- **memory_store**: skips turns with nothing personal in the guest's message
+  (no name, diet, allergy, occasion, contact detail, or history reference)
+  unless a `create_reservation` call succeeded. Otherwise it queues fact
+  extraction on a background worker and returns immediately; the guest's
+  answer is not held back by memory work.
 
 ## Multi-turn conversation continuity
 
@@ -316,21 +333,50 @@ latest user message sent to the model. Old context blocks are never written
 into the history, so prompts stay small and the summarizer sees real dialogue
 instead of repeated boilerplate.
 
-Summarization runs when the history exceeds 12 messages. It summarizes older
-messages, keeps the recent window verbatim, and moves the cut forward to a
-`user` message so the recent window never starts with an orphan tool result or
-an assistant tool-call message. Tool results appear as one short line in the
-summarizer transcript. Any previous summary block is removed from the system
-prompt before the new summary is appended, so summaries do not stack.
+Summarization counts only conversation messages: guest `user` messages and
+`assistant` messages that have text and no tool calls. System messages, tool
+results and assistant tool-call messages are ignored, because they add
+prompt size without adding an exchange; counting them made tool-heavy turns
+reach the old limit after a few questions. The node runs when the history
+holds more than 16 conversation messages (8 exchanges). It keeps the last 6
+conversation messages (3 exchanges) verbatim, together with every tool and
+tool-call message that sits between them, and moves the cut to a `user`
+message so the recent window is a usable turn. Older messages are summarized
+into one paragraph. Tool results appear as one short line in the summarizer
+transcript. Any previous summary block is removed from the system prompt
+before the new summary is appended, so summaries do not stack.
+
+For follow-ups, retrieval runs twice: once for the current question and once
+for the previous guest question joined with the current one. This keeps
+pronouns and phrases like "which of those" anchored to the earlier topic
+(for example, desserts) even though only the latest message is embedded.
+The two result lists are merged by chunk id (the higher score survives),
+sorted by score, and capped at `rag_top_k`. The second retrieval uses local
+embeddings, so it adds no LLM call.
 
 Memory extraction runs after the reply on a single background worker
 (`ThreadPoolExecutor(max_workers=1)`). `memory_store` submits plain values
 (guest id and transcript), returns immediately, and logs failures without
-raising into the graph. Before storing, the extractor loads the guest's
-existing facts, includes them in the prompt as "Facts already known (do not
-repeat these)", skips normalized duplicates, and skips facts whose embedding
-similarity to an existing memory is at or above 0.92. Tests and the eval
-runner can call `wait_for_memory_jobs(timeout)` to wait for queued jobs.
+raising into the graph. A turn is skipped entirely when the guest's message
+has no personal indicator and no `create_reservation` call succeeded, so
+ordinary menu, story, location and hours questions do not pay for an
+extraction call. The extractor is prompted to store only short facts the
+guest stated about themselves; it must not turn a question, inquiry or
+booking attempt into a preference, and it stores a booking only when the
+turn contains a successful `create_reservation` result. Before storing, the
+extractor loads the guest's existing facts, includes them in the prompt as
+"Facts already known (do not repeat these)", skips normalized duplicates,
+and skips facts whose embedding similarity to an existing memory is at or
+above 0.92. Each fact is embedded once and the same vector is used for the
+duplicate search and the insert. Extraction uses
+`MEMORY_EXTRACTION_TIMEOUT` (default 90 s) with no retry; a timed-out call
+is logged and the facts for that turn are dropped. Tests and the eval runner
+can call `wait_for_memory_jobs(timeout)` to wait for queued jobs.
+
+Under `npm start` on Windows, Ctrl+C stops the services with a forced kill.
+A queued extraction job can be lost, which costs at most the facts from the
+last turn. Start the agent directly if you need to let memory work finish
+before stopping it.
 
 The SSE `stored_memories` frame was removed with the background change; the
 frontend never used it. The `memory_store` node frame is still emitted.
